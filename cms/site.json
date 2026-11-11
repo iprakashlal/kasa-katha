@@ -1,7 +1,8 @@
 {
   "template": "store",
   "name": "Kasa Katha",
-  "version": 1,
-  "exportedAt": "2026-11-11T05:59:15.612Z",
+  "version": 2,
+  "admin": "admin.html",
+  "exportedAt": "2026-11-11T18:45:09.372Z",
   "generator": "Site Studio"
 }
