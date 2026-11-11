@@ -1,11 +1,11 @@
 {
   "theme": {
-    "bg": "#FFFFFF",
-    "surface": "#F5F5F3",
-    "text": "#111111",
-    "soft": "#707070",
+    "bg": "#c8d6e5",
+    "surface": "#8395a7",
+    "text": "#5f27cd",
+    "soft": "#5f27cd",
     "line": "#E7E7E4",
-    "accent": "#111111",
+    "accent": "#5f27cd",
     "accent2": "#C9C2B6",
     "sale": "#9A8F80",
     "fontDisplay": "Cormorant Garamond",
