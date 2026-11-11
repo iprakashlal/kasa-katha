@@ -1,5 +1,5 @@
 {
-  "savedAt": "2026-11-11T18:46:45.461Z",
+  "savedAt": "2026-11-11T18:47:10.733Z",
   "note": "Draft from the site CMS. Not live until you press Save & publish.",
   "content": {
     "theme": {
@@ -33,8 +33,8 @@
       "hoverfx": "lift",
       "scrollfx": "smooth",
       "overlay": "grain",
-      "introBg": "#1B1A17",
-      "introFg": "#FFFFFF",
+      "introBg": "#121070",
+      "introFg": "#e1dfdf",
       "introTitle": "",
       "logoRadius": 50,
       "scrollEase": "light",
