@@ -281,6 +281,33 @@
       "stock": "in",
       "featured": false,
       "badge": ""
+    },
+    {
+      "id": "pmwc0a9j5zzxwl",
+      "slug": "",
+      "name": "Hand-Painted Floral Ceramic Cup & Saucer Set",
+      "category": "ceramics",
+      "price": 300,
+      "compareAt": 500,
+      "images": [
+        {
+          "path": "assets/uploads/1794394802788-825269933-18121372171739249-343339056683.jpg"
+        },
+        {
+          "path": "assets/uploads/1794394830457-828150665-18121372201739249-528618448083.jpg"
+        },
+        {
+          "path": "assets/uploads/1794394854293-828069045-18121372180739249-862929326685.jpg"
+        }
+      ],
+      "short": "Bring elegance to your tea & coffee moments with this beautiful hand-painted ceramic cup & saucer set",
+      "description": "Featuring delicate pink floral designs. Perfect for everyday use, gifting, or adding a charming touch to your table.",
+      "features": [],
+      "optionName": "",
+      "options": [],
+      "stock": "in",
+      "featured": false,
+      "badge": ""
     }
   ],
   "settings": {
