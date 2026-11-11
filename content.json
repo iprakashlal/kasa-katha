@@ -380,8 +380,8 @@
   },
   "backend": {
     "enabled": false,
-    "provider": "supabase",
-    "workerUrl": "",
+    "provider": "cloudflare",
+    "workerUrl": "https://shop.imprakashlal.workers.dev/",
     "supabaseUrl": "",
     "anonKey": "",
     "accounts": true,
