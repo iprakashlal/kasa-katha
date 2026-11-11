@@ -10,7 +10,7 @@
     "sale": "#9A8F80",
     "fontDisplay": "Cormorant Garamond",
     "fontBody": "Mulish",
-    "radius": 0,
+    "radius": 11,
     "preset": "gallery",
     "layout": "minimal",
     "nav": "float",
