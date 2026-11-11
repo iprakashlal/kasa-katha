@@ -386,7 +386,7 @@
     "anonKey": "",
     "accounts": true,
     "wishlist": true,
-    "requireLogin": false
+    "requireLogin": true
   },
   "accountPage": {
     "title": "Your account",
