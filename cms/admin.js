@@ -76,6 +76,7 @@ Created with Site Studio.
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
 <title>Your account</title>
+<script>try{var b=localStorage.getItem("site-bg:"+location.pathname.replace(/[^/]*$/,""));if(b)document.documentElement.style.background=b}catch(e){}<\/script>
 <meta name="description" content="">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="assets/store.css">
