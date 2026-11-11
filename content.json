@@ -362,6 +362,33 @@
       "stock": "in",
       "featured": false,
       "badge": ""
+    },
+    {
+      "id": "pmwc0oq8mf9hzi",
+      "slug": "",
+      "name": "Green Striped Ceramic Mug & Saucer Set",
+      "category": "ceramics",
+      "price": 300,
+      "compareAt": 500,
+      "images": [
+        {
+          "path": "assets/uploads/1794395536723-825270004-18121373236739249-299475671509.jpg"
+        },
+        {
+          "path": "assets/uploads/1794395540771-828532260-18121373227739249-632309132151.jpg"
+        },
+        {
+          "path": "assets/uploads/1794395544350-825270006-18121373212739249-597090008235.jpg"
+        }
+      ],
+      "short": "Add a fresh and elegant touch to your everyday tea & coffee moments with this charming ceramic mug and matching saucer set.",
+      "description": "Featuring soft green stripes and a glossy finish, it’s perfect for your kitchen, coffee corner, or dining table.",
+      "features": [],
+      "optionName": "",
+      "options": [],
+      "stock": "in",
+      "featured": false,
+      "badge": ""
     }
   ],
   "settings": {
