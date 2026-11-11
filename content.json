@@ -335,6 +335,33 @@
       "stock": "in",
       "featured": false,
       "badge": ""
+    },
+    {
+      "id": "pmwc0ggh5r3wc5",
+      "slug": "",
+      "name": "Turquoise Heart Ceramic Cup & Flower-Shaped Saucer Set ",
+      "category": "ceramics",
+      "price": 300,
+      "compareAt": 500,
+      "images": [
+        {
+          "path": "assets/uploads/1794395145508-825270210-18121373008739249-625263154210.jpg"
+        },
+        {
+          "path": "assets/uploads/1794395149504-827423532-18121373032739249-883839263487.jpg"
+        },
+        {
+          "path": "assets/uploads/1794395152838-828525244-18121373041739249-759644681439.jpg"
+        }
+      ],
+      "short": "Add a cheerful touch to your tea & coffee moments with this charming hand-painted ceramic cup and flower-shaped saucer set.",
+      "description": "Featuring a turquoise heart, playful polka dots, and matching heart accents, it’s perfect for your coffee corner, dining table, or as a thoughtful gift.",
+      "features": [],
+      "optionName": "",
+      "options": [],
+      "stock": "in",
+      "featured": false,
+      "badge": ""
     }
   ],
   "settings": {
