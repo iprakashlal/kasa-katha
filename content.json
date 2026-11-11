@@ -37,7 +37,9 @@
     "scrollEase": "light",
     "lineBreaks": "typed",
     "deep": "#111111",
-    "motif": "studio"
+    "motif": "studio",
+    "introFont": "display",
+    "introCase": "upper"
   },
   "brand": {
     "name": "KASA KATHA",
