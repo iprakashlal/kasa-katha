@@ -113,7 +113,17 @@
       "category": "ceramics",
       "price": 500,
       "compareAt": 0,
-      "images": [],
+      "images": [
+        {
+          "path": "assets/uploads/1794394159860-828467534-18121363978739249-594043507140.jpg"
+        },
+        {
+          "path": "assets/uploads/1794394206316-825270185-18121363954739249-264083160701.jpg"
+        },
+        {
+          "path": "assets/uploads/1794394282132-825269917-18121363963739249-870078667413.jpg"
+        }
+      ],
       "short": "Add a little sweetness to your everyday moments! ✨",
       "description": "This cute handmade ceramic mug & matching plate set features a charming strawberry design—perfect for your morning tea, coffee, snacks, or gifting!",
       "features": [
