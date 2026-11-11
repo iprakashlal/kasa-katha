@@ -103,7 +103,7 @@
     ".fx-load--split.out .fx-pt{transform:translateY(-101%)}",
     ".fx-load--split.out .fx-pb{transform:translateY(101%)}",
     ".fx-brand{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:clamp(28px,6vw,76px);font-weight:800;letter-spacing:.32em;text-transform:uppercase;white-space:nowrap;padding-left:.32em;transition:opacity .4s,letter-spacing 1.2s var(--fxe)}",
-    ".fx-brand span{display:inline-block;opacity:0;transform:translateY(60%);animation:fxup .7s var(--fxe) forwards;animation-delay:calc(var(--i)*45ms)}",
+    ".fx-brand span{display:inline-block;opacity:0;transform:translateY(60%);animation:fxup .7s var(--fxe) forwards}",
     ".fx-load.go .fx-brand{letter-spacing:.12em}",
     ".fx-load.out .fx-brand,.fx-load.out .fx-num,.fx-load.out .fx-bar{opacity:0}",
     ".fx-num{position:absolute;right:4vw;bottom:3vh;font-size:clamp(72px,18vw,240px);font-weight:800;line-height:.8;letter-spacing:-.04em;font-variant-numeric:tabular-nums;transition:opacity .3s}",
@@ -115,7 +115,7 @@
     ".fx-exit.in .fx-p{transform:none}",
     /* page-to-page: the name sits in the middle while the panels close, stays while the next page loads, then the panels open */
     ".fx-exit .fx-brand,.fx-cover .fx-brand{letter-spacing:.12em}",
-    ".fx-exit .fx-brand span{animation-duration:.45s;animation-delay:calc(.22s + var(--i)*22ms)}",
+    ".fx-exit .fx-brand span{animation-duration:.45s;animation-delay:.22s}",
     ".fx-cover .fx-brand span{animation:none;opacity:1;transform:none}",
     ".fx-cover.out .fx-brand{transition:opacity .35s}",
     "@keyframes fxup{to{opacity:1;transform:none}}",
@@ -158,7 +158,7 @@
       ensureStyle();
       var x = pend.charAt(0) === "{" ? JSON.parse(pend) : { bg: pend };
       var kind = x.kind === "split" ? "split" : "curtain";
-      cover = el("div", "fx-load fx-cover fx-load--" + kind, panels(kind, x.brand));
+      cover = el("div", "fx-load fx-cover fx-load--" + kind, panels(kind, ""));
       cover.style.setProperty("--fxd", x.bg || "#111"); cover.style.setProperty("--fxo", x.fg || "#fff");
       (document.body || doc).appendChild(cover); coverAt = Date.now();
       setTimeout(function () { if (cover) revealCover(); }, 4000);
@@ -428,12 +428,12 @@
     if (u.origin !== location.origin || !/^https?:$/.test(u.protocol) || /admin\.html$/.test(u.pathname)) return;
     if (u.pathname === location.pathname && u.search === location.search) return;
     e.preventDefault();
-    var col = colors(), kind = c.loader === "split" ? "split" : "curtain", box = el("div", "fx-load fx-exit fx-load--" + kind, panels(kind, st.brand));
+    var col = colors(), kind = c.loader === "split" ? "split" : "curtain", box = el("div", "fx-load fx-exit fx-load--" + kind, panels(kind, ""));
     box.style.setProperty("--fxd", col.deep); box.style.setProperty("--fxo", col.on);
     document.body.appendChild(box);
     try { sessionStorage.setItem("fx-exit", JSON.stringify({ bg: col.deep, fg: col.on, kind: kind, brand: st.brand })); } catch (x) {}
     requestAnimationFrame(function () { requestAnimationFrame(function () { box.classList.add("in"); }); });
-    setTimeout(function () { location.href = u.href; }, st.brand ? 760 : 560);
+    setTimeout(function () { location.href = u.href; }, 560);
   }
   addEventListener("pageshow", function (e) { if (e.persisted) $$(".fx-exit").forEach(function (n) { n.remove(); }); });
 
@@ -485,7 +485,15 @@
 
     // entrance: page cover from the previous page, or the theme's loader
     var animate = !RM && (!PREVIEW || changed), delay = 0;
-    if (cover) { st.loaderPlayed = true; revealCover(); delay = 350; }
+    if (cover && c.loader !== "none" && !RM) {
+      // Arriving from another page of the site: the panels are already closed, so play the site's full intro
+      // (the name rises in letter by letter, then the panels open) exactly as on the first visit.
+      var cv = cover; cover = null; st.loaderPlayed = true;
+      playLoader(c.loader, opts.brand || document.title);
+      requestAnimationFrame(function () { requestAnimationFrame(function () { cv.remove(); }); });
+      delay = c.loader === "counter" ? 1250 : 950;
+    }
+    else if (cover) { st.loaderPlayed = true; revealCover(); delay = 350; }
     else if (c.loader !== "none" && !RM) {
       var play = PREVIEW ? c.loader !== st.loader : !st.loaderPlayed && Date.now() - T0 < 5000;
       if (play) { st.loaderPlayed = true; playLoader(c.loader, opts.brand || document.title); delay = c.loader === "counter" ? 1250 : 950; }
