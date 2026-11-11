@@ -266,8 +266,8 @@
   "payments": {
     "upi": {
       "enabled": true,
-      "vpa": "",
-      "payeeName": "",
+      "vpa": "cskv06@oksbi",
+      "payeeName": "Kasa katha",
       "label": "UPI"
     },
     "razorpay": {
