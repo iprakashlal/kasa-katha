@@ -276,7 +276,7 @@
       "id": "pmwc0s9udfc12c",
       "slug": "",
       "name": "Sweet Blossom Heart-Handle Ceramic Mug",
-      "category": "",
+      "category": "ceramics",
       "price": 300,
       "compareAt": 500,
       "images": [
@@ -292,6 +292,33 @@
       ],
       "short": "Make every coffee or tea break extra special with this charming handcrafted ceramic mug.",
       "description": "Featuring a unique heart-shaped handle, textured wavy finish, and delicate hand-painted red daisies with yellow accents, it’s a beautiful blend of colour, love, and artistry.",
+      "features": [],
+      "optionName": "",
+      "options": [],
+      "stock": "in",
+      "featured": false,
+      "badge": ""
+    },
+    {
+      "id": "pmwc13v22f8oog",
+      "slug": "",
+      "name": "Mum Ceramic Mug & Saucer Set",
+      "category": "ceramics",
+      "price": 300,
+      "compareAt": 500,
+      "images": [
+        {
+          "path": "assets/uploads/1794396271372-825269899-18121374313739249-729293066204.jpg"
+        },
+        {
+          "path": "assets/uploads/1794396275495-829299275-18121374304739249-202456972698.jpg"
+        },
+        {
+          "path": "assets/uploads/1794396279200-828954472-18121374289739249-499425063847.jpg"
+        }
+      ],
+      "short": "A heartfelt little gift for the most special woman in your life.",
+      "description": "This charming handmade ceramic set features a beautiful “MUM” mug paired with a matching flower-shaped dish—perfect for her everyday tea, coffee, or snack time.",
       "features": [],
       "optionName": "",
       "options": [],
