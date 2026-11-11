@@ -34,10 +34,12 @@
     "motif": "studio"
   },
   "brand": {
-    "name": "Fieldnote Goods",
-    "tagline": "Small-batch goods for slow mornings",
-    "logo": null,
-    "announcement": "Free shipping on orders over ₹1,999",
+    "name": "KASA KATHA",
+    "tagline": "Curating beautiful things for beautiful living!",
+    "logo": {
+      "path": "assets/uploads/1794389702930-kasa-katha-logo.jpg"
+    },
+    "announcement": "Free shipping on orders over ₹999",
     "showAnnouncement": true
   },
   "seo": {
@@ -55,13 +57,13 @@
   "home": {
     "hero": {
       "eyebrow": "New collection",
-      "title": "Objects for slow mornings",
-      "text": "Hand-made ceramics, linen and paper goods, made in small batches and shipped with care.",
+      "title": "Premium Quality | Affordable Prices",
+      "text": "Curating beautiful things for beautiful living!",
       "cta": "Shop the collection",
       "image": null
     },
     "featuredTitle": "Featured",
-    "featuredText": "Our most-loved pieces this season.",
+    "featuredText": "Our most loved pieces this season",
     "showCategories": true,
     "categoriesTitle": "Shop by category",
     "banner": {
