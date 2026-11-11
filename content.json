@@ -279,7 +279,17 @@
       "category": "",
       "price": 300,
       "compareAt": 500,
-      "images": [],
+      "images": [
+        {
+          "path": "assets/uploads/1794396067962-828562598-18121373632739249-445351301792.jpg"
+        },
+        {
+          "path": "assets/uploads/1794396077298-825270020-18121373614739249-664160409933.jpg"
+        },
+        {
+          "path": "assets/uploads/1794396081451-830027646-18121373590739249-776395621997.jpg"
+        }
+      ],
       "short": "Make every coffee or tea break extra special with this charming handcrafted ceramic mug.",
       "description": "Featuring a unique heart-shaped handle, textured wavy finish, and delicate hand-painted red daisies with yellow accents, it’s a beautiful blend of colour, love, and artistry.",
       "features": [],
