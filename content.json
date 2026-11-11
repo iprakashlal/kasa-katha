@@ -379,7 +379,7 @@
     "text": "Made in small batches."
   },
   "backend": {
-    "enabled": false,
+    "enabled": true,
     "provider": "cloudflare",
     "workerUrl": "https://shop.imprakashlal.workers.dev/",
     "supabaseUrl": "",
