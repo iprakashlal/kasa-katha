@@ -254,6 +254,33 @@
       "featured": false,
       "badge": "",
       "sample": false
+    },
+    {
+      "id": "pmwc046z9sizmr",
+      "slug": "",
+      "name": "Dreamy Village Hand-Crafted Ceramic Art Mug ",
+      "category": "ceramics",
+      "price": 300,
+      "compareAt": 500,
+      "images": [
+        {
+          "path": "assets/uploads/1794394539379-825270084-18121370950739249-415613243645.jpg"
+        },
+        {
+          "path": "assets/uploads/1794394602368-828525247-18121370932739249-575223228269.jpg"
+        },
+        {
+          "path": "assets/uploads/1794394627817-825270102-18121370941739249-309796203563.jpg"
+        }
+      ],
+      "short": "Bring a little piece of a dreamy village into your everyday coffee & tea moments!",
+      "description": "This beautiful hand-painted ceramic mug features a charming folk-art scene with a cozy cottage, whimsical trees, rolling clouds, and a cheerful sun.",
+      "features": [],
+      "optionName": "",
+      "options": [],
+      "stock": "in",
+      "featured": false,
+      "badge": ""
     }
   ],
   "settings": {
