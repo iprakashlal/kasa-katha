@@ -68,10 +68,12 @@
     "categoriesTitle": "Shop by category",
     "banner": {
       "show": true,
-      "title": "Made in small batches",
-      "text": "Every piece is made by a small team. Read how we work and see what we've made for other brands.",
+      "title": "Home • Lifestyle • Stories",
+      "text": "Every piece is hand-crafted & hand-painted!",
       "cta": "Read our story",
-      "image": null
+      "image": {
+        "path": "assets/uploads/1794393323024-screenshot-11-11-2026-16512-wwwinstagram.jpeg"
+      }
     },
     "testimonialsTitle": "What customers say",
     "testimonials": []
