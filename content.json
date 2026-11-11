@@ -103,6 +103,27 @@
   ],
   "products": [
     {
+      "id": "p2",
+      "slug": "serving-bowl",
+      "name": "Serving bowl",
+      "category": "ceramics",
+      "price": 1650,
+      "compareAt": 0,
+      "images": [],
+      "short": "Wide bowl for salads and pasta",
+      "description": "A wide, shallow bowl for sharing.",
+      "features": [
+        "24 cm across",
+        "Oven safe to 200 °C"
+      ],
+      "optionName": "",
+      "options": [],
+      "stock": "low",
+      "featured": true,
+      "badge": "",
+      "sample": true
+    },
+    {
       "id": "p1",
       "slug": "stoneware-mug",
       "name": "Stoneware mug",
@@ -129,27 +150,6 @@
       "sample": false
     },
     {
-      "id": "p2",
-      "slug": "serving-bowl",
-      "name": "Serving bowl",
-      "category": "ceramics",
-      "price": 1650,
-      "compareAt": 0,
-      "images": [],
-      "short": "Wide bowl for salads and pasta",
-      "description": "A wide, shallow bowl for sharing.",
-      "features": [
-        "24 cm across",
-        "Oven safe to 200 °C"
-      ],
-      "optionName": "",
-      "options": [],
-      "stock": "low",
-      "featured": true,
-      "badge": "",
-      "sample": true
-    },
-    {
       "id": "p3",
       "slug": "linen-napkins",
       "name": "Linen napkins, set of 4",
@@ -172,7 +172,7 @@
       "stock": "in",
       "featured": true,
       "badge": "New",
-      "sample": true
+      "sample": false
     },
     {
       "id": "p4",
@@ -218,7 +218,7 @@
       "stock": "in",
       "featured": true,
       "badge": "",
-      "sample": true
+      "sample": false
     },
     {
       "id": "p6",
@@ -239,7 +239,7 @@
       "stock": "out",
       "featured": false,
       "badge": "",
-      "sample": true
+      "sample": false
     }
   ],
   "settings": {
