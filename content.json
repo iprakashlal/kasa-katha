@@ -308,6 +308,33 @@
       "stock": "in",
       "featured": false,
       "badge": ""
+    },
+    {
+      "id": "pmwc0dx6cabs39",
+      "slug": "",
+      "name": "Bro Ceramic Mug & Saucer Set ",
+      "category": "ceramics",
+      "price": 300,
+      "compareAt": 500,
+      "images": [
+        {
+          "path": "assets/uploads/1794394950914-825270186-18121372471739249-744511643497.jpg"
+        },
+        {
+          "path": "assets/uploads/1794394978417-825270060-18121372480739249-476288736456.jpg"
+        },
+        {
+          "path": "assets/uploads/1794394998734-825270222-18121372462739249-193533984471.jpg"
+        }
+      ],
+      "short": "A fun and thoughtful gift for your favourite bro!",
+      "description": "This charming handmade ceramic set features a “Bro” mug paired with a cute leaf-shaped dish—perfect for his everyday tea, coffee, or snack time.",
+      "features": [],
+      "optionName": "",
+      "options": [],
+      "stock": "in",
+      "featured": false,
+      "badge": ""
     }
   ],
   "settings": {
