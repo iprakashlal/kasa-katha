@@ -265,7 +265,7 @@
   },
   "payments": {
     "upi": {
-      "enabled": false,
+      "enabled": true,
       "vpa": "",
       "payeeName": "",
       "label": "UPI"
