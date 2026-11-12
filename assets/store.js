@@ -109,7 +109,10 @@ const ppOk = (v) => /^[A-Za-z0-9]{1,40}$/.test(String(v || "").trim());
 const httpsOk = (u) => /^https:\/\/[^\s]+$/i.test(String(u || "").trim());
 const digits = (v) => String(v || "").replace(/\D/g, "");
 let ASSETS = {};
-const imgUrl = (img) => (!img ? "" : img.path ? ASSETS[img.path] || img.path : img.url || "");
+// Hosted outside GitHub: the Studio adds a "site-host" JSON script tag saying where the live content and photos are.
+const HOST = (() => { try { const e = document.getElementById("site-host"); return e ? JSON.parse(e.textContent) : null; } catch (e) { return null; } })();
+const hostPhoto = (p) => (HOST && /^assets\/uploads\//.test(p) ? HOST.assets + p.split("/").map(encodeURIComponent).join("/") : p);
+const imgUrl = (img) => (!img ? "" : img.path ? ASSETS[img.path] || hostPhoto(img.path) : img.url || "");
 const basePath = location.pathname.replace(/[^/]*$/, "");
 let C = merge(DEFAULT, {});
 const PAGE = document.body.dataset.page || "home";
@@ -283,7 +286,7 @@ function applyTheme(t) {
   MOTIF = window.SiteMotifs ? SiteMotifs.resolve(t, "cafe") : "geometric";
   const d = document.documentElement.dataset; d.motif = moOn() ? MOTIF : "geometric";
   for (const k of ["layout", "nav", "cards", "buttons", "motionStyle", "pattern", "ornament", "heading", "shead", "width", "grid", "product", "cursor", "loader", "textfx", "hoverfx", "scrollfx", "overlay"]) d[k] = String(t[k] || "");
-  d.scrollease = t.scrollEase || "light"; d.linebreaks = t.lineBreaks || "typed";
+  d.scrollease = t.scrollEase || "light"; d.linebreaks = t.lineBreaks || "typed"; d.menu = String(t.navMode || "");
   d.introfont = t.introFont || "display"; d.introcase = t.introCase || "upper";
   r.setProperty("--r", (+t.radius || 0) + "px");
   r.setProperty("--fd", `"${t.fontDisplay}",Georgia,serif`); r.setProperty("--fb", `"${t.fontBody}","Helvetica Neue",Arial,sans-serif`);
@@ -848,7 +851,10 @@ else {
   let shown = "";
   try { const c = sessionStorage.getItem(CKEY); if (c) { C = merge(DEFAULT, JSON.parse(c)); render(); shown = c; } } catch (e) {}
   const giveUp = setTimeout(() => { if (!shown) { render(); shown = "default"; } }, 6000);
-  fetch("content.json", { cache: "no-store" }).then((r) => (r.ok ? r.text() : null)).then((txt) => {
+  const fromFile = () => fetch("content.json", { cache: "no-store" }).then((r) => (r.ok ? r.text() : null));
+  const fromDb = () => fetch(HOST.db + "/rest/v1/site_content?select=content&site=eq." + encodeURIComponent(HOST.site), { cache: "no-store", headers: { apikey: HOST.key, Authorization: "Bearer " + HOST.key } })
+    .then((r) => (r.ok ? r.json() : null)).then((j) => (j && j[0] && j[0].content ? JSON.stringify(j[0].content) : null)).catch(() => null).then((t) => t || fromFile());
+  (HOST ? fromDb() : fromFile()).then((txt) => {
     clearTimeout(giveUp);
     if (!txt) { if (!shown) render(); return; }
     try { sessionStorage.setItem(CKEY, txt); } catch (e) {}
@@ -857,4 +863,12 @@ else {
   }).catch(() => { clearTimeout(giveUp); if (!shown) render(); });
 }
 addEventListener("hashchange", () => { if (PAGE === "account") render(); });
+})();
+
+// Menu when scrolling (theme.navMode): "" theme default, fixed, hide (hide on scroll down, show on scroll up), scroll (scrolls away)
+(function(){let lastY=scrollY;const de=document.documentElement,SEL=".nav,.hdr,.vx-hdr,.ks-top,.kk-top,.kg-top,.kv-top,.kp-top";
+  addEventListener("scroll",()=>{const y=scrollY,d=y-lastY;
+    if(de.dataset.menu!=="hide"||de.classList.contains("vx-menu-open")||document.querySelector(".hdr [aria-expanded=true],.nav [aria-expanded=true]")){de.classList.remove("menu-away");lastY=y;return}
+    if(Math.abs(d)<6)return;de.classList.toggle("menu-away",d>0&&y>140);lastY=y},{passive:true});
+  document.addEventListener("focusin",e=>{if(e.target.closest&&e.target.closest(SEL))de.classList.remove("menu-away")});
 })();
