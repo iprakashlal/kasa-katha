@@ -3,6 +3,10 @@
   "name": "Kasa Katha",
   "version": 10,
   "admin": "admin.html",
-  "exportedAt": "2026-11-12T11:42:31.881Z",
-  "generator": "Site Studio"
+  "exportedAt": "2026-11-12T18:07:08.816Z",
+  "generator": "Site Studio",
+  "studioBuild": {
+    "id": "e9bd909",
+    "at": "2026-11-12T18:00:27.530Z"
+  }
 }
