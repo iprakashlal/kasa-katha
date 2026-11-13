@@ -3,11 +3,78 @@
   "name": "Kasa Katha",
   "version": 10,
   "admin": "admin.html",
-  "exportedAt": "2026-11-13T08:22:23.922Z",
+  "exportedAt": "2026-11-13T09:08:29.925Z",
   "generator": "Site Studio",
   "studioBuild": {
-    "id": "648b227",
-    "at": "2026-11-13T08:17:41.420Z"
+    "id": "35ea324",
+    "at": "2026-11-13T08:54:26.639Z"
   },
-  "badge": "1hp4z3o"
+  "badge": "1hp4z3o",
+  "menu": {
+    "items": [
+      {
+        "id": "look"
+      },
+      {
+        "id": "theme"
+      },
+      {
+        "id": "nav",
+        "label": "Menu & sections"
+      },
+      {
+        "id": "home"
+      },
+      {
+        "id": "products"
+      },
+      {
+        "id": "categories"
+      },
+      {
+        "id": "shop"
+      },
+      {
+        "id": "portfolio"
+      },
+      {
+        "id": "pricing"
+      },
+      {
+        "id": "checkout"
+      },
+      {
+        "id": "payments"
+      },
+      {
+        "id": "backend"
+      },
+      {
+        "id": "orders"
+      },
+      {
+        "id": "contact"
+      },
+      {
+        "id": "seo"
+      },
+      {
+        "id": "cms"
+      },
+      {
+        "id": "shop-orders"
+      },
+      {
+        "id": "shop-customers"
+      },
+      {
+        "id": "backup"
+      },
+      {
+        "id": "account"
+      }
+    ],
+    "studio": true
+  },
+  "menuV": "12bwu9n"
 }
