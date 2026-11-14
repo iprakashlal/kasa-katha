@@ -77,7 +77,40 @@
       "title": "Curating beautiful things for beautiful living",
       "text": "Premium Quality | Affordable Prices",
       "cta": "Shop the collection",
-      "image": null
+      "image": null,
+      "slides": {
+        "enabled": true,
+        "items": [
+          {
+            "image": {
+              "path": "assets/uploads/1794645818466-829299275-18121374304739249-202456972698.jpg"
+            },
+            "position": "center",
+            "title": "",
+            "text": ""
+          },
+          {
+            "image": {
+              "path": "assets/uploads/1794645881810-825270084-18121370950739249-415613243645.jpg"
+            },
+            "position": "center",
+            "title": "",
+            "text": ""
+          }
+        ],
+        "effect": "zoom",
+        "interval": 3,
+        "speed": 1.2,
+        "overlay": 45,
+        "overlayColor": "#000000",
+        "overlayStyle": "left",
+        "textColor": "light",
+        "height": "tall",
+        "dots": false,
+        "arrows": false,
+        "pause": false,
+        "hideArt": false
+      }
     },
     "featuredTitle": "Featured",
     "featuredText": "Our most loved pieces this season",
@@ -502,5 +535,58 @@
   },
   "cms": {
     "adminPage": "admin"
+  },
+  "poweredBy": {
+    "show": true
+  },
+  "warranty": {
+    "enabled": false,
+    "title": "Warranty & service status",
+    "intro": "Enter the number on your invoice or product to see its warranty and service status.",
+    "navLabel": "Warranty",
+    "inNav": true,
+    "inFooter": true,
+    "label": "Serial or invoice number",
+    "placeholder": "",
+    "verify": "none",
+    "verifyLabel": "",
+    "button": "Check status",
+    "notFound": "We couldn't find that number. Check it and try again.",
+    "help": "Need help? Contact us and we'll look it up.",
+    "showWarranty": true,
+    "showHistory": true,
+    "showCustomer": false,
+    "statuses": [
+      {
+        "id": "registered",
+        "label": "Registered",
+        "tone": "info"
+      },
+      {
+        "id": "received",
+        "label": "Received for service",
+        "tone": "progress"
+      },
+      {
+        "id": "in-repair",
+        "label": "In repair",
+        "tone": "progress"
+      },
+      {
+        "id": "ready",
+        "label": "Ready for pickup",
+        "tone": "ok"
+      },
+      {
+        "id": "delivered",
+        "label": "Delivered",
+        "tone": "ok"
+      },
+      {
+        "id": "not-covered",
+        "label": "Not covered",
+        "tone": "bad"
+      }
+    ]
   }
 }
