@@ -3,6 +3,10 @@
    seller as a pre-filled WhatsApp message or email. */
 (() => {
 "use strict";
+/* Code Update (content.code): when a site runs its own copy of this code, SiteCode (fx.js) takes the page over before
+   anything is drawn. Inside that copy SiteCode is empty, so the copy never hands over again. */
+const SC = typeof SiteCode === "undefined" || !SiteCode ? null : SiteCode;
+if (SC) SC.track();
 
 /* ============================================================
    DEFAULT CONTENT (also exported as content.json)
@@ -10,7 +14,7 @@
 const DEFAULT = {
   theme: { bg: "#FAF7F2", surface: "#FFFFFF", text: "#1B1A17", soft: "#6B665D", line: "#E7E1D6", accent: "#1F4D3A", accent2: "#E9B949", sale: "#B4441B", fontDisplay: "Fraunces", fontBody: "Manrope", radius: 14,
     preset: "ivory-classic", layout: "split", nav: "pill", cards: "soft", buttons: "rounded", motionStyle: "none", pattern: "none", ornament: "none", heading: "normal", shead: "plain", width: "normal", grid: "auto", product: "classic",
-    cursor: "none", loader: "none", textfx: "none", hoverfx: "none", scrollfx: "none", overlay: "none",
+    cursor: "none", loader: "none", textfx: "none", hoverfx: "none", scrollfx: "none", overlay: "none", herofx: "none",
     introBg: "", introFg: "", introTitle: "", introFont: "display", introCase: "upper", logoRadius: 26, scrollEase: "light", lineBreaks: "typed" },
   warranty: { enabled: false, title: "Warranty & service status", intro: "Enter the number on your invoice or product to see its warranty and service status.", navLabel: "Warranty", inNav: true, inFooter: true,
     label: "Serial or invoice number", placeholder: "", verify: "none", verifyLabel: "", button: "Check status", notFound: "We couldn't find that number. Check it and try again.", help: "Need help? Contact us and we'll look it up.",
@@ -255,7 +259,11 @@ const pimg = (p, i = 0) => (p.images && p.images[i] ? `<img src="${esc(imgUrl(p.
 let cart = store.get("cart", []);
 const saveCart = () => { store.set("cart", cart); $$("[data-cartcount]").forEach((el) => { el.textContent = cartCount(); }); };
 const cartCount = () => cart.reduce((n, l) => n + l.qty, 0);
-function cartLines() { return cart.map((l) => ({ ...l, p: prodBy(l.id) })).filter((l) => l.p && l.p.stock !== "out"); }
+/** A product's varieties with their own prices (p.kindsOn, p.kinds): the buyer must choose one, and it sets the price. */
+const kindsOf = (p) => (p && p.kindsOn ? (p.kinds || []).filter((k) => k && String(k.label || "").trim() && isFinite(Number(k.price)) && Number(k.price) >= 0).map((k) => ({ label: String(k.label).trim(), price: Number(k.price) })) : []);
+/** The product as bought on one cart line: with varieties, its price is the chosen variety's (the first part of the line's option). */
+function asBought(p, opt) { const K = kindsOf(p); if (!K.length) return p; const k = K.find((x) => x.label === String(opt || "").split(" · ")[0].trim()); return k ? { ...p, price: k.price, compareAt: 0 } : null; }
+function cartLines() { return cart.map((l) => ({ ...l, p: asBought(prodBy(l.id), l.opt) })).filter((l) => l.p && l.p.stock !== "out"); }
 function addToCart(id, opt, qty) {
   const max = Math.max(1, Number(C.settings.maxQty) || 10);
   const ex = cart.find((l) => l.id === id && l.opt === opt);
@@ -324,19 +332,106 @@ function totals(lines = cartLines(), pin = curPin()) {
   const free = over > 0 && sub >= over;
   const ship = !lines.length || free ? 0 : q.fee != null ? q.fee : Number(S.shippingFee) || 0;
   const pct = Number(S.taxPercent) || 0;
-  const taxAdd = pct && !S.taxIncluded ? Math.round(sub * pct) / 100 : 0;
-  const taxIn = pct && S.taxIncluded ? Math.round((sub - sub / (1 + pct / 100)) * 100) / 100 : 0;
-  const total = Math.round((sub + ship + taxAdd) * 100) / 100;
+  const pt = ptsFor(sub), net = sub - pt.off; // points the buyer spends come off the goods, before tax
+  const taxAdd = pct && !S.taxIncluded ? Math.round(net * pct) / 100 : 0;
+  const taxIn = pct && S.taxIncluded ? Math.round((net - net / (1 + pct / 100)) * 100) / 100 : 0;
+  const total = Math.round((net + ship + taxAdd) * 100) / 100;
   const left = over > 0 && !free ? over - sub : 0;
-  return { sub, ship, taxAdd, taxIn, total, left, free };
+  const L = C.loyalty || {}, earn = L.on && +L.earn > 0 ? Math.floor((net / 100) * +L.earn) : 0;
+  return { sub, ship, taxAdd, taxIn, total, left, free, pts: pt.pts, ptsOff: pt.off, earn };
+}
+/** Which of email and phone a shopper must give (Checkout → “A shopper must give”): email, phone, both or either one.
+ *  Left alone, it is as before: email always, and the phone when it is asked for. A shop with accounts always needs the email. */
+function mustGive() {
+  const K = C.checkout || {}, n = ["email", "phone", "both", "either"].includes(K.need) ? K.need : "", acc = BE() || !!USER;
+  const v = !!CAN.otp && !BE() && !PREVIEW; // every shopper verifies their number: it is always asked for
+  if (!n) return { email: true, phone: v || !!K.askPhone, askPhone: v || !!K.askPhone, either: false };
+  return { email: acc || n === "email" || n === "both", phone: v || n === "phone" || n === "both", askPhone: true, either: n === "either" && !acc && !v };
+}
+/* Email check (Checkout → “Verify the email address”): a 6-digit code is emailed, and the order carries the proof.
+   If the shop's database can't send the code at all, it gives a pass instead, so shoppers are never locked out. */
+const EV = { tok: "", email: "", sent: false, msg: "" };
+const evCan = () => !!CAN.em && !BE() && !PREVIEW && !!(HOST && HOST.api && HOST.site);
+const evEmail = () => { const i = $("#email"); return String(i ? i.value : EV.email).trim().toLowerCase(); };
+const evTok = () => (EV.tok && EV.email === evEmail() && +EV.tok.replace(/^s:/, "").split(".")[0] > Date.now() + 60000 ? EV.tok : "");
+function evBox() {
+  if (!evCan()) return "";
+  const bad = EV.msg ? `<p class="err" role="alert">${esc(EV.msg)}</p>` : "", t = evTok();
+  const h = t ? (t.startsWith("s:") ? "" : `<p class="soft"><b>Email address verified.</b></p>`)
+    : EV.sent ? `<div class="f"><label for="evcode">Code we emailed you</label><div class="ptsrow"><input class="in" id="evcode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits"><button type="button" class="btn" data-ev="check">Verify</button></div></div><button type="button" class="rm" data-ev="send">Send a new code</button>`
+    : `<button type="button" class="btn" data-ev="send">Verify this email address</button><p class="soft">We email a 6-digit code to this address before taking the order${mustGive().email ? "" : " (only if you give an email address)"}.</p>`;
+  return `<div class="ptsbox" aria-live="polite">${h}${bad}</div>`;
+}
+function evDraw() { const b = $("#evbox"); if (b) b.innerHTML = evBox(); }
+async function evAct(send) {
+  const email = evEmail(), code = String(($("#evcode") || {}).value || "").trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { EV.msg = "Enter your email address first."; return evDraw(); }
+  if (!send && !/^\d{6}$/.test(code)) { EV.msg = "Enter the 6-digit code."; return evDraw(); }
+  EV.msg = "";
+  try {
+    const r = await fetch(HOST.api + "/eotp/" + (send ? "send" : "check") + "/" + encodeURIComponent(HOST.site), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, code }) }), j = await r.json().catch(() => null);
+    if (!r.ok) EV.msg = (j && j.error) || "That didn't work. Please try again.";
+    else if (send && j && j.skip) { EV.tok = "s:" + j.skip; EV.email = email; EV.sent = false; }
+    else if (send) { EV.sent = true; EV.tok = ""; }
+    else { EV.tok = String(j.token || ""); EV.email = email; EV.sent = false; }
+  } catch (e) { EV.msg = "Couldn't reach us just now. Check your connection."; }
+  evDraw(); const c = $("#evcode"); if (c) c.focus();
+}
+/* Points (content.loyalty): a buyer proves their phone number with a WhatsApp code, sees their points and can take them
+   off the order. The shop's database holds the points and works the discount out again itself. */
+const PTS = { tok: "", phone: "", info: null, use: false, sent: false, msg: "", via: "" };
+const VIA = { wa: "on WhatsApp", sms: "by SMS" }, viaNow = () => (CAN.via.includes(PTS.via) ? PTS.via : CAN.via[0] || "wa");
+const ptsOn = () => !!(C.loyalty && C.loyalty.on) && !!CAN.pts; // points can be spent here
+const ptsCan = () => (ptsOn() || !!CAN.otp) && !BE() && !PREVIEW && !!(HOST && HOST.api && HOST.site) && mustGive().askPhone;
+/** Where the verify box sits: under the details when every shopper must verify, else beside the summary (points only). */
+const ptsSlot = (where) => (where === (CAN.otp ? "top" : "side") ? `<div id="ptsbox">${ptsBox()}</div>` : "");
+const ptsPhone = () => { const i = $("#phone"); return i ? i.value : PTS.phone; };
+const ptsProved = () => !!PTS.tok && +PTS.tok.split(".")[0] > Date.now() + 60000 && digits(PTS.phone).length >= 8 && digits(ptsPhone()) === digits(PTS.phone);
+function ptsFor(sub) {
+  const P = PTS.info;
+  if (PAGE !== "checkout" || !P || !PTS.use || !ptsCan() || !ptsOn() || !ptsProved() || !(P.worth > 0) || P.points < Math.max(1, P.min || 0) || !(sub > 0)) return { pts: 0, off: 0 };
+  const pts = Math.max(0, Math.min(Math.floor(P.points), Math.floor((sub * P.maxPct) / 100 / P.worth)));
+  return { pts, off: Math.round(pts * P.worth * 100) / 100 };
+}
+function ptsBox() {
+  if (!ptsCan()) return "";
+  const P = PTS.info, bad = PTS.msg ? `<p class="err" role="alert">${esc(PTS.msg)}</p>` : "", n = (k) => `${k} point${k === 1 ? "" : "s"}`;
+  let h; const ways = CAN.via.map((v) => VIA[v]).join(" or "), sendBtns = (lead, cls) => CAN.via.map((v) => `<button type="button" class="${cls}" data-pts="send" data-via="${v}">${lead} ${VIA[v]}</button>`).join(" ");
+  if (ptsProved() && (P || !ptsOn())) {
+    const t = totals(), ok = CAN.otp ? `<p class="soft"><b>Phone number verified.</b></p>` : "";
+    h = !ptsOn() || !P ? ok : ok + (P.points >= Math.max(1, P.min || 0) && P.worth > 0
+      ? `<label class="co-consent"><input type="checkbox" id="usepts"${PTS.use ? " checked" : ""}> <span><b>Use my points</b><br><span class="soft">You have ${n(P.points)}${t.pts ? `: ${t.pts} used here, ${esc(money(t.ptsOff))} off` : `, worth up to ${esc(money(Math.round(P.points * P.worth * 100) / 100))}`}.</span></span></label>`
+      : `<p class="soft">You have ${n(P.points)}.${P.min > P.points ? ` Points can be used from ${P.min}.` : ""}</p>`);
+  } else if (PTS.sent) h = `<div class="f"><label for="ptscode">Code we sent you ${VIA[viaNow()]}</label><div class="ptsrow"><input class="in" id="ptscode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits"><button type="button" class="btn" data-pts="check">Verify</button></div></div>${sendBtns("Send a new code", "rm")}`;
+  else if (CAN.otp) h = `${sendBtns("Verify my number", "btn")}<p class="soft">We send a 6-digit code ${ways} to the phone number you entered, before taking the order.${ptsOn() ? " It also shows the points you can take off this order." : ""}</p>`;
+  else h = `${sendBtns("Use my points: send a code", "btn")}<p class="soft">Optional. We send a 6-digit code ${ways} to the phone number you entered, then show the points you can take off this order.</p>`;
+  const e = ptsOn() || (C.loyalty && C.loyalty.on) ? totals().earn : 0;
+  return `<div class="ptsbox" aria-live="polite">${h}${bad}${e ? `<p class="soft">This order earns you ${n(e)}.</p>` : ""}</div>`;
+}
+function ptsDraw() { const b = $("#ptsbox"); if (b) b.innerHTML = ptsBox(); const rows = $("#sumrows"); if (rows && PAGE === "checkout") rows.innerHTML = summaryRows(totals()); }
+async function ptsAct(send) {
+  const phone = ptsPhone(), code = String(($("#ptscode") || {}).value || "").trim(), at = HOST.api + "/", site = encodeURIComponent(HOST.site), post = (path, body) => fetch(at + path + "/" + site, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (digits(phone).length < 8) { PTS.msg = "Enter your phone number under Your details first."; return ptsDraw(); }
+  if (!send && !/^\d{6}$/.test(code)) { PTS.msg = "Enter the 6-digit code."; return ptsDraw(); }
+  PTS.msg = "";
+  try {
+    const r = await post("otp/" + (send ? "send" : "check"), { phone, code, via: viaNow() }), j = await r.json().catch(() => null);
+    if (!r.ok) PTS.msg = (j && j.error) || "That didn't work. Please try again.";
+    else if (send) { PTS.sent = true; PTS.tok = ""; PTS.info = null; if (j && j.via) PTS.via = j.via; }
+    else {
+      PTS.tok = String(j.token || ""); PTS.phone = phone; PTS.sent = false;
+      if (ptsOn()) { const pr = await post("points", { phone, otp: PTS.tok }); PTS.info = pr.ok ? await pr.json() : { points: 0, min: 0, worth: 0, maxPct: 0 }; }
+    }
+  } catch (e) { PTS.msg = "Couldn't reach us just now. Check your connection."; }
+  ptsDraw(); const c = $("#ptscode"); if (c) c.focus();
 }
 /** Gateways the shop's own database (Host to External Services) can charge with the owner's keys: the exact total, confirmed by itself. */
-let CAN = { rz: "", pg: [] };
+let CAN = { rz: "", pg: [], pts: false, em: false, otp: false, via: ["wa"] };
 const GWID = { razorpay: "rz", cashfree: "cf", phonepe: "pe", stripe: "st", paypal: "pp" }, GWNAME = { razorpay: "Razorpay", cashfree: "Cashfree", phonepe: "PhonePe", stripe: "Stripe", paypal: "PayPal" };
 const dbPay = (m) => !BE() && !PREVIEW && !!(HOST && HOST.api && HOST.site) && (m === "razorpay" ? !!CAN.rz : CAN.pg.includes(GWID[m]));
 function askCan() {
   if (askCan.done || PREVIEW || BE() || !(HOST && HOST.api && HOST.site) || PAGE !== "checkout") return; askCan.done = true;
-  fetch(HOST.api + "/site/" + encodeURIComponent(HOST.site) + "/can", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((j) => { if (!j) return; CAN = { rz: String(j.rz || ""), pg: Array.isArray(j.pg) ? j.pg : [] }; if (!cameBack() && (CAN.rz || CAN.pg.length)) render(); }).catch(() => {});
+  fetch(HOST.api + "/site/" + encodeURIComponent(HOST.site) + "/can", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((j) => { if (!j) return; CAN = { rz: String(j.rz || ""), pg: Array.isArray(j.pg) ? j.pg : [], pts: !!j.pts, em: !!j.em, otp: !!j.otp, via: Array.isArray(j.via) && j.via.length ? j.via.filter((v) => v === "wa" || v === "sms") : ["wa"] }; if (!cameBack() && (CAN.rz || CAN.pg.length || CAN.otp)) render(); else { ptsDraw(); evDraw(); } }).catch(() => {});
 }
 function methods() {
   const P = C.payments, out = [], own = (n) => `You pay on ${n}'s secure page and come back here. The order is placed as soon as you've paid.`;
@@ -364,16 +459,17 @@ function applyTheme(t) {
   r.setProperty("--logo-r", Math.max(0, Math.min(50, t.logoRadius ?? 26)) + "%");
   MOTIF = window.SiteMotifs ? SiteMotifs.resolve(t, "cafe") : "geometric";
   const d = document.documentElement.dataset; d.motif = moOn() ? MOTIF : "geometric";
-  for (const k of ["layout", "heroArt", "nav", "cards", "buttons", "motionStyle", "pattern", "ornament", "heading", "shead", "width", "grid", "product", "cursor", "loader", "textfx", "hoverfx", "scrollfx", "overlay"]) d[k] = String(t[k] || "");
+  for (const k of ["layout", "heroArt", "nav", "cards", "buttons", "motionStyle", "pattern", "ornament", "heading", "shead", "width", "grid", "product", "cursor", "loader", "textfx", "hoverfx", "scrollfx", "overlay", "herofx"]) d[k] = String(t[k] || "");
   d.scrollease = t.scrollEase || "light"; d.linebreaks = t.lineBreaks || "typed"; d.menu = String(t.navMode || ""); d.menumob = String(t.navModeMob || "");
   d.crumbs = (C.nav || {}).crumbs === false ? "off" : "on"; d.introfont = t.introFont || "display"; d.introcase = t.introCase || "upper";
   r.setProperty("--r", (+t.radius || 0) + "px");
   r.setProperty("--fd", `"${t.fontDisplay}",Georgia,serif`); r.setProperty("--fb", `"${t.fontBody}","Helvetica Neue",Arial,sans-serif`);
   if (window.SiteFonts) { const cd = SiteFonts.use(t, "display", imgUrl), cb = SiteFonts.use(t, "body", imgUrl); if (cd) r.setProperty("--fd", `"${cd}","${t.fontDisplay}",Georgia,serif`); if (cb) r.setProperty("--fb", `"${cb}","${t.fontBody}","Helvetica Neue",Arial,sans-serif`); }
   // One stylesheet per family, so a family Google can't serve never blocks the others.
+  const FOK = !(window.SiteFX && window.SiteFX.fontsOk) || window.SiteFX.fontsOk(C); // Google Fonts wait for consent when the site says so
   [[FONTS[t.fontDisplay], "fontlink"], [FONTS[t.fontBody], "fontlink2"], ["JetBrains+Mono:wght@400;500", "fontlink3"]].forEach(([f, id]) => {
     let l = document.getElementById(id); if (!l) { l = document.createElement("link"); l.id = id; l.rel = "stylesheet"; document.head.appendChild(l); }
-    const href = f ? "https://fonts.googleapis.com/css2?family=" + f + "&display=swap" : ""; if (href && l.getAttribute("href") !== href) l.setAttribute("href", href);
+    const href = f && FOK ? "https://fonts.googleapis.com/css2?family=" + f + "&display=swap" : ""; if (href && l.getAttribute("href") !== href) l.setAttribute("href", href); if (!FOK) l.removeAttribute("href");
   });
   // The next page starts loading these fonts from its <head>, before any script runs (no font swap on arrival).
   if (!PREVIEW) try { localStorage.setItem("site-fonts:" + location.pathname.replace(/[^/]*$/, ""), JSON.stringify(["fontlink", "fontlink2", "fontlink3"].map((id) => [id, (document.getElementById(id) || {}).href || ""]))); } catch (e) {}
@@ -456,7 +552,7 @@ function footer() {
 }
 function pcard(p) {
   const badge = p.stock === "out" ? `<span class="badge out">Sold out</span>` : onSale(p) ? `<span class="badge sale">Sale</span>` : p.badge ? `<span class="badge">${esc(p.badge)}</span>` : "";
-  return `<a class="pcard" href="${productUrl(p)}"><div class="im">${badge}${pimg(p)}</div><div><h3>${esc(p.name)}</h3>${p.short ? `<p class="s">${esc(p.short)}</p>` : ""}</div><div class="price">${esc(money(p.price))}${onSale(p) ? `<s>${esc(money(p.compareAt))}</s>` : ""}</div></a>`;
+  return `<a class="pcard" href="${productUrl(p)}"><div class="im">${badge}${pimg(p)}</div><div><h3>${esc(p.name)}</h3>${p.short ? `<p class="s">${esc(p.short)}</p>` : ""}</div><div class="price">${kindsOf(p).length ? "From " + esc(money(Math.min(...kindsOf(p).map((k) => k.price)))) : esc(money(p.price)) + (onSale(p) ? `<s>${esc(money(p.compareAt))}</s>` : "")}</div></a>`;
 }
 
 /* ============================================================
@@ -503,10 +599,10 @@ const PAGES = {
     return `${hx || `<section class="hero">${C.theme.ornament && C.theme.ornament !== "none" ? (moOn() ? `<div class="orn mo" aria-hidden="true">${[["accent2", 0], ["accent", 1], ["sale", 2]].map(([k, i]) => `<span style="color:var(--${k});--mo2:var(--${k === "accent" ? "accent2" : "accent"})">${SiteMotifs.svg(MOTIF, i, 0, true)}</span>`).join("")}</div>` : `<div class="orn" aria-hidden="true"><i></i><i></i><i></i></div>`) : ""}<div class="wrap"><div class="htx"><p class="eyebrow">${ml(H.hero.eyebrow)}</p><h1 class="fit">${ml(H.hero.title)}</h1><p class="lead">${ml(H.hero.text)}</p>
       <div class="cta"><a class="btn pri" href="shop.html">${esc(H.hero.cta)} →</a>${C.nav.showPortfolio ? `<a class="btn" href="portfolio.html">${esc(C.nav.portfolio)}</a>` : ""}</div></div>
       <div class="art" data-edit="${H.hero.video ? "home.hero.video" : "home.hero.image"}">${H.hero.video ? heroFilm(H.hero) : H.hero.image ? `<img src="${esc(imgUrl(H.hero.image))}" alt="">` : `<div class="collage">${(col.length ? col : [{ name: "A" }, { name: "B" }, { name: "C" }]).map((p) => `<div style="border-radius:calc(var(--r)*1.1);overflow:hidden">${p.images && p.images[0] ? pimg(p) : ph(p.name)}</div>`).join("")}</div>`}</div></div></section>`}
-    ${list.length ? `<section class="sec" style="padding-top:12px"><div class="wrap"><div class="sec-h"><div><h2 class="fit">${ml(H.featuredTitle)}</h2>${H.featuredText ? `<p class="soft" style="margin-top:8px">${ml(H.featuredText)}</p>` : ""}</div><a class="link" href="shop.html">${esc(lab("viewAll", "View all"))}</a></div><div class="grid">${list.map(pcard).join("")}</div></div></section>` : ""}
-    ${H.showCategories && C.categories.length ? `<section class="sec" style="padding-top:0"><div class="wrap"><div class="sec-h"><h2 class="fit">${ml(H.categoriesTitle)}</h2></div><div class="cats">${C.categories.map((c) => `<a class="cat" href="shop.html?c=${encodeURIComponent(c.id)}">${c.image ? `<img src="${esc(imgUrl(c.image))}" alt="">` : ph(c.name)}<span>${esc(c.name)}<small>${C.products.filter((p) => p.category === c.id).length} products</small></span></a>`).join("")}</div></div></section>` : ""}
-    ${H.banner.show ? `<section class="sec" style="padding-top:0"><div class="wrap"><div class="banner"><div class="tx"><h2 class="fit">${ml(H.banner.title)}</h2><p>${ml(H.banner.text)}</p>${C.nav.showPortfolio && H.banner.cta ? `<a class="btn" href="portfolio.html">${esc(H.banner.cta)} →</a>` : ""}</div><div class="im">${H.banner.image ? `<img src="${esc(imgUrl(H.banner.image))}" alt="">` : ph(H.banner.title)}</div></div></div></section>` : ""}
-    ${H.testimonials.length ? `<section class="sec" style="padding-top:0"><div class="wrap"><div class="sec-h"><h2 class="fit">${ml(H.testimonialsTitle)}</h2></div>${H.google && H.google.rating && H.testimonials.some((t) => t.source === "google") ? `<p class="g-sum"><a href="${esc(H.google.url || "#")}" target="_blank" rel="noopener"><span class="stars" aria-hidden="true">${starRow(H.google.rating)}</span> <b>${(+H.google.rating).toFixed(1)}</b> from ${esc(String(H.google.count))} reviews on Google</a></p>` : ""}<div class="quotes">${H.testimonials.map((t) => `<figure class="quote" style="margin:0">${t.rating ? `<span class="stars" role="img" aria-label="${+t.rating} out of 5 stars">${starRow(t.rating)}</span>` : ""}<p>“${esc(t.quote)}”</p><span><b>${esc(t.name)}</b>${t.role ? ` · ${esc(t.role)}` : ""}</span></figure>`).join("")}</div></div></section>` : ""}`;
+    ${list.length ? `<section class="sec" data-sec="featured" style="padding-top:12px"><div class="wrap"><div class="sec-h"><div><h2 class="fit">${ml(H.featuredTitle)}</h2>${H.featuredText ? `<p class="soft" style="margin-top:8px">${ml(H.featuredText)}</p>` : ""}</div><a class="link" href="shop.html">${esc(lab("viewAll", "View all"))}</a></div><div class="grid">${list.map(pcard).join("")}</div></div></section>` : ""}
+    ${H.showCategories && C.categories.length ? `<section class="sec" data-sec="categories" style="padding-top:0"><div class="wrap"><div class="sec-h"><h2 class="fit">${ml(H.categoriesTitle)}</h2></div><div class="cats">${C.categories.map((c) => `<a class="cat" href="shop.html?c=${encodeURIComponent(c.id)}">${c.image ? `<img src="${esc(imgUrl(c.image))}" alt="">` : ph(c.name)}<span>${esc(c.name)}<small>${C.products.filter((p) => p.category === c.id).length} products</small></span></a>`).join("")}</div></div></section>` : ""}
+    ${H.banner.show ? `<section class="sec" data-sec="banner" style="padding-top:0"><div class="wrap"><div class="banner"><div class="tx"><h2 class="fit">${ml(H.banner.title)}</h2><p>${ml(H.banner.text)}</p>${C.nav.showPortfolio && H.banner.cta ? `<a class="btn" href="portfolio.html">${esc(H.banner.cta)} →</a>` : ""}</div><div class="im">${H.banner.image ? `<img src="${esc(imgUrl(H.banner.image))}" alt="">` : ph(H.banner.title)}</div></div></div></section>` : ""}
+    ${H.testimonials.length ? `<section class="sec" data-sec="reviews" style="padding-top:0"><div class="wrap"><div class="sec-h"><h2 class="fit">${ml(H.testimonialsTitle)}</h2></div>${H.google && H.google.rating && H.testimonials.some((t) => t.source === "google") ? `<p class="g-sum"><a href="${esc(H.google.url || "#")}" target="_blank" rel="noopener"><span class="stars" aria-hidden="true">${starRow(H.google.rating)}</span> <b>${(+H.google.rating).toFixed(1)}</b> from ${esc(String(H.google.count))} reviews on Google</a></p>` : ""}<div class="quotes">${H.testimonials.map((t) => `<figure class="quote" style="margin:0">${t.rating ? `<span class="stars" role="img" aria-label="${+t.rating} out of 5 stars">${starRow(t.rating)}</span>` : ""}<p>“${esc(t.quote)}”</p><span><b>${esc(t.name)}</b>${t.role ? ` · ${esc(t.role)}` : ""}</span></figure>`).join("")}</div></div></section>` : ""}`;
   },
   shop() {
     const S = C.shop, q = new URLSearchParams(location.search);
@@ -527,9 +623,10 @@ const PAGES = {
     <div class="pd" data-pid="${esc(p.id)}"><div class="gal"><div class="main" id="mainimg">${imgs[0] ? `<img src="${esc(imgUrl(imgs[0]))}" alt="${esc(p.name)}">` : ph(p.name)}</div>
       ${imgs.length > 1 ? `<div class="thumbs">${imgs.map((im, i) => `<button type="button" data-i="${i}" aria-pressed="${i === 0}" aria-label="Photo ${i + 1}"><img src="${esc(imgUrl(im))}" alt=""></button>`).join("")}</div>` : ""}</div>
     <div class="info">${p.badge ? `<p class="eyebrow">${esc(p.badge)}</p>` : ""}<h1>${esc(p.name)}</h1>
-      <div class="price">${esc(money(p.price))}${onSale(p) ? `<s>${esc(money(p.compareAt))}</s><span class="off">${Math.round((1 - p.price / p.compareAt) * 100)}% off</span>` : ""}</div>
+      <div class="price" id="pd-price" aria-live="polite">${kindsOf(p).length ? "From " + esc(money(Math.min(...kindsOf(p).map((k) => k.price)))) : esc(money(p.price)) + (onSale(p) ? `<s>${esc(money(p.compareAt))}</s><span class="off">${Math.round((1 - p.price / p.compareAt) * 100)}% off</span>` : "")}</div>
       <p class="stock ${p.stock}">${p.stock === "out" ? "Sold out" : p.stock === "low" ? "Only a few left" : "In stock"}</p>
       ${p.short ? `<p style="font-size:17px">${esc(p.short)}</p>` : ""}
+      ${kindsOf(p).length ? `<div class="opt"><span class="lbl" id="kindl">${esc(p.kindName || "Variety")} <small class="soft">(choose one)</small></span><div class="kindbtns optbtns-k" role="group" aria-labelledby="kindl">${kindsOf(p).map((k) => `<button type="button" data-k="${esc(k.label)}" aria-pressed="false">${esc(k.label)} · ${esc(money(k.price))}</button>`).join("")}</div></div>` : ""}
       ${p.options && p.options.length ? `<div class="opt"><span class="lbl" id="optl">${esc(p.optionName || "Option")}</span><div class="optbtns" role="group" aria-labelledby="optl">${p.options.map((o, i) => `<button type="button" data-o="${esc(o)}" aria-pressed="${i === 0}">${esc(o)}</button>`).join("")}</div></div>` : ""}
       ${pinBox()}
       ${p.stock !== "out" ? `<div class="opt"><span class="lbl">Quantity</span><div class="buy"><div class="qty"><button type="button" data-q="-1" aria-label="Fewer">−</button><output id="qty" aria-live="polite">1</output><button type="button" data-q="1" aria-label="More">+</button></div>
@@ -569,12 +666,13 @@ const PAGES = {
     const fld = (id, label, type = "text", req = true, full = false, ac = "") => `<div class="f${full ? " full" : ""}"><label for="${id}">${esc(label)}${req ? "" : ' <span class="soft">(optional)</span>'}</label><input class="in" id="${id}" name="${id}" type="${type}"${req ? " required" : ""}${ac ? ` autocomplete="${ac}"` : ""}${id === "email" && USER ? " readonly" : ""} value="${esc(me[id] || "")}"><span class="err" id="${id}-e"></span></div>`;
     return `<section class="page-h"><div class="wrap"><h1 class="fit">${ml(K.title)}</h1>${K.intro ? `<p>${ml(K.intro)}</p>` : ""}</div></section>
     <form class="wrap two" id="co" novalidate><div class="form">
-      <div class="box"><h2>Your details</h2><div class="fgrid">${fld("name", "Full name", "text", true, false, "name")}${fld("email", "Email", "email", true, false, "email")}${K.askPhone ? fld("phone", "Phone", "tel", true, false, "tel") : ""}</div></div>
+      <div class="box"><h2>Your details</h2><div class="fgrid">${fld("name", "Full name", "text", true, false, "name")}${fld("email", "Email", "email", mustGive().email, false, "email")}${mustGive().askPhone ? fld("phone", "Phone", "tel", mustGive().phone, false, "tel") : ""}</div>${mustGive().either ? `<p class="soft" style="font-size:13.5px;margin-top:8px">Give your email address or your phone number (or both), so we can reach you about the order.</p>` : ""}<div id="evbox">${evBox()}</div>${ptsSlot("top")}</div>
       ${K.askAddress ? `<div class="box"><h2>Delivery address</h2><div class="fgrid">${fld("address", "Address", "text", true, true, "street-address")}${fld("city", "City", "text", true, false, "address-level2")}${fld("pin", "PIN / postcode", "text", true, false, "postal-code")}${fld("state", "State", "text", true, false, "address-level1")}${gstOn() && C.gst.askGstin ? fld("gstin", "GSTIN, for a business invoice", "text", false, true) : ""}</div>${shipOn() ? `<p class="soft" id="pin-msg" role="status" style="font-size:14px;margin-top:8px"></p>` : ""}</div>` : ""}
       ${K.askNotes ? `<div class="box"><div class="f"><label for="notes">Notes <span class="soft">(optional)</span></label><textarea class="in" id="notes" name="notes" rows="3"></textarea></div></div>` : ""}
       <div class="box"><h2>Payment</h2>${ms.length ? `<div class="pays" role="radiogroup" aria-label="Payment method">${ms.map((m, i) => `<label class="pay"><input type="radio" name="pm" value="${m.id}"${i === 0 ? " checked" : ""}><div><b>${esc(m.label)}</b><span>${esc(m.desc)}</span></div></label>`).join("")}</div>` : `<p class="note">Online payment isn't set up yet. Place the order and we'll contact you about payment.</p>`}</div>
     </div>
-    <aside class="sum"><h2>Order</h2><div class="mini">${lines.map((l) => `<div class="it"><div class="im">${pimg(l.p)}</div><div>${esc(l.p.name)}${l.opt ? `<br><span class="soft">${esc(l.opt)}</span>` : ""} × ${l.qty}</div><b>${esc(money(l.p.price * l.qty))}</b></div>`).join("")}</div><div id="sumrows">${summaryRows(t)}</div>
+    <aside class="sum"><h2>Order</h2><div class="mini">${lines.map((l) => `<div class="it"><div class="im">${pimg(l.p)}</div><div>${esc(l.p.name)}${l.opt ? `<br><span class="soft">${esc(l.opt)}</span>` : ""} × ${l.qty}</div><b>${esc(money(l.p.price * l.qty))}</b></div>`).join("")}</div><div id="sumrows">${summaryRows(t)}</div>${ptsSlot("side")}
+      ${consentWords("") ? `<label class="co-consent"><input type="checkbox" id="co-consent"> <span>${esc(consentWords(""))}</span></label>` : ""}
       <p class="err" id="co-err" role="alert"></p><button class="btn pri block" type="submit">${esc(K.button)}</button><p class="soft" style="font-size:13px">${BE() ? "You'll see the exact total before you pay." : "Nothing is charged yet. You'll pay and send the order on the next screen."}</p></aside></form>`;
   },
   portfolio() {
@@ -605,6 +703,7 @@ const PAGES = {
 function summaryRows(t) {
   const S = C.settings;
   return `<div class="row"><span>Subtotal</span><span>${esc(money(t.sub))}</span></div>
+    ${t.ptsOff ? `<div class="row"><span>Points used (${t.pts})</span><span>− ${esc(money(t.ptsOff))}</span></div>` : ""}
     <div class="row"><span>Shipping</span><span>${t.ship ? esc(money(t.ship)) : "Free"}</span></div>
     ${t.taxAdd ? `<div class="row"><span>${esc(S.taxLabel)} (${S.taxPercent}%)</span><span>${esc(money(t.taxAdd))}</span></div>` : ""}
     <div class="row t"><span>Total</span><span>${esc(money(t.total))}</span></div>
@@ -621,9 +720,10 @@ function newOrderId() {
 function orderText(o) {
   const L = [`${C.orders.messageIntro || "New order"} ${o.id}`, `Date: ${new Date(o.at).toLocaleString()}`, "", "Items:"];
   o.items.forEach((i) => L.push(`• ${i.name}${i.opt ? ` (${i.opt})` : ""} × ${i.qty} = ${money(i.price * i.qty)}`));
-  L.push("", `Subtotal: ${money(o.t.sub)}`, `Shipping: ${o.t.ship ? money(o.t.ship) : "Free"}`);
+  L.push("", `Subtotal: ${money(o.t.sub)}`); if (o.t.ptsOff) L.push(`Points used (${o.t.pts}): − ${money(o.t.ptsOff)}`);
+  L.push(`Shipping: ${o.t.ship ? money(o.t.ship) : "Free"}`);
   if (o.t.taxAdd) L.push(`${C.settings.taxLabel}: ${money(o.t.taxAdd)}`);
-  L.push(`Total: ${money(o.t.total)}`, `Payment: ${o.methodLabel}`, "", "Customer:", o.c.name, o.c.email);
+  L.push(`Total: ${money(o.t.total)}`, `Payment: ${o.methodLabel}`, "", "Customer:", o.c.name); if (o.c.email) L.push(o.c.email);
   if (o.c.phone) L.push(o.c.phone);
   if (o.c.address) L.push(`${o.c.address}, ${o.c.city} ${o.c.pin}, ${o.c.state}`);
   if (o.c.notes) L.push("", `Notes: ${o.c.notes}`);
@@ -637,8 +737,8 @@ function serverDone(o) {
   const K = C.checkout, P = C.payments, wa = digits(C.orders.whatsapp), total = esc(money(o.t.total));
   const paid = o.payment_status === "paid", cod = o.payment_status === "cod";
   let pay = "";
-  if (paid) pay = `<p class="note"><b>Payment received.</b> We've emailed a confirmation to ${esc(o.c.email)}.</p>`;
-  else if (cod) pay = `<p>${esc(P.cod.note || "Pay when your order arrives.")} Keep <b>${total}</b> ready.</p><p class="note">We've emailed your order confirmation to ${esc(o.c.email)}.</p>`;
+  if (paid) pay = `<p class="note"><b>Payment received.</b> ${o.c.email ? `We've emailed a confirmation to ${esc(o.c.email)}.` : `We'll reach you on ${esc(o.c.phone)} about your order.`}</p>`;
+  else if (cod) pay = `<p>${esc(P.cod.note || "Pay when your order arrives.")} Keep <b>${total}</b> ready.</p><p class="note">${o.c.email ? `We've emailed your order confirmation to ${esc(o.c.email)}.` : `We'll reach you on ${esc(o.c.phone)} about your order.`}</p>`;
   else if (o.method === "razorpay") pay = `<p>Your payment isn't complete yet.</p><button class="btn pri" type="button" id="payrz">Pay ${total} now</button>`;
   else if (o.method === "stripe") pay = `<p>If you've just paid, this page updates in a moment.</p>${o.stripeUrl ? `<a class="btn pri" href="${esc(o.stripeUrl)}">Pay ${total} on Stripe</a>` : ""}`;
   else if (o.method === "upi") pay = `<p>Scan the code in any UPI app, or pay to the UPI ID. The amount and order number are filled in.</p><div class="qr" id="qr" aria-label="UPI QR code"></div><div class="copyrow"><code>${esc(P.upi.vpa)}</code><button type="button" data-copy="${esc(P.upi.vpa)}">Copy UPI ID</button></div><a class="btn pri" href="${esc(upiLink(o))}">Open UPI app</a><p class="note">Check your UPI app shows <b>${esc(P.upi.payeeName || C.brand.name)}</b> and <b>${total}</b>. Once we confirm your payment, we'll email you at ${esc(o.c.email)}.</p>`;
@@ -646,7 +746,7 @@ function serverDone(o) {
   if (!paid && !cod && (o.method === "upi" || o.method === "paypal")) {
     const what = o.method === "upi" ? "UPI transaction ID (UTR)" : "PayPal transaction ID";
     pay += o.reported
-      ? `<p class="note"><b>Thanks, we've got your reference ${esc(o.utr || "")}.</b> We'll email you at ${esc(o.c.email)} as soon as we've confirmed the payment.</p>`
+      ? `<p class="note"><b>Thanks, we've got your reference ${esc(o.utr || "")}.</b> We'll ${o.c.email ? `email you at ${esc(o.c.email)}` : `reach you on ${esc(o.c.phone)}`} as soon as we've confirmed the payment.</p>`
       : `<form id="utr" class="form" novalidate style="border-top:1px solid var(--line);padding-top:16px"><div class="f"><label for="utr-in">Paid already? Enter the ${what}</label><input class="in" id="utr-in" inputmode="${o.method === "upi" ? "numeric" : "text"}" autocomplete="off" placeholder="${o.method === "upi" ? "12-digit number from your UPI app" : "Transaction ID"}"><span class="err" id="utr-e" role="alert"></span></div><button class="btn" type="submit">Send reference</button><p class="soft" style="font-size:13px">We'll check it and email you a confirmation.</p></form>`;
   }
   const title = paid || cod ? K.successTitle : "Your order is saved";
@@ -762,6 +862,9 @@ function video() {
     .then(() => window.SiteVideo.mount(C, { sections: "#main > section", home: PAGE === "home", imgUrl })).catch(() => {});
 }
 /** The footer's link that reopens the consent choices (while the banner is on). */
+/* Legal & privacy: the privacy policy's address, and the words of the consent tick box on forms (content.privacy). */
+const policyUrl = () => { const K = C.consent || {}; if (safeUrl(K.policyUrl)) return safeUrl(K.policyUrl); const L = spList(), p = L.find((x) => x.id === K.policyPage) || L.find((x) => x.id === "pg-privacy" || /privacy/i.test(String(x.title || ""))); return p ? spHref(p) : ""; };
+const consentWords = (own) => String(own || "").trim() || ((C.privacy || {}).formConsent === false ? "" : String((C.privacy || {}).formText || "").trim() || "I agree to my details being used to respond to me, as described in the Privacy policy.");
 const ckOn = () => !!(C.consent && C.consent.on && C.consent.footerLink !== false);
 /* Regional languages (assets/lang.js): the chosen language is put into the content before the page is drawn, then
    the page's fixed wording is translated and the language switcher added. */
@@ -778,10 +881,17 @@ function lang() { if (window.SiteLang) window.SiteLang.mount(C, { navs: ["#nav"]
 document.addEventListener("click", (e) => {
   const b = e.target.closest && e.target.closest("[data-pinchk]");
   if (b) { const i = $("#pinchk"), pin = i ? i.value.replace(/\D/g, "").slice(0, 6) : ""; const out = $("#pinres"); if (pin.length < 6) { if (out) { out.textContent = "Enter the 6 digits of your PIN code."; out.style.color = ""; } return; } store.set("pin", pin); const r = pinSays(pin); if (out) { out.textContent = r.text; out.style.color = r.ok === false ? "var(--sale,#c0392b)" : ""; } const rows = $("#sumrows"); if (rows) rows.innerHTML = summaryRows(totals()); return; }
+  const eb = e.target.closest && e.target.closest("[data-ev]");
+  if (eb) { evAct(eb.getAttribute("data-ev") === "send"); return; }
+  const pb = e.target.closest && e.target.closest("[data-pts]");
+  if (pb) { const v = pb.getAttribute("data-via"); if (v) PTS.via = v; ptsAct(pb.getAttribute("data-pts") === "send"); return; }
   const v = e.target.closest && e.target.closest("[data-inv]");
   if (v) { const o = invOrder(v.getAttribute("data-inv")); if (o) openInvoice(o); }
 });
+document.addEventListener("change", (e) => { if (e.target && e.target.id === "usepts") { PTS.use = e.target.checked; ptsDraw(); } });
 document.addEventListener("input", (e) => {
+  if (e.target && e.target.id === "phone" && PTS.tok) ptsDraw(); // a changed number is no longer the proved one
+  if (e.target && e.target.id === "email" && (EV.tok || EV.sent)) { EV.sent = false; evDraw(); } // nor a changed email address
   if (!e.target || e.target.id !== "pin" || !shipOn()) return;
   const pin = e.target.value.replace(/\D/g, ""), msg = $("#pin-msg"), er = $("#pin-e"); if (er) er.textContent = "";
   if (pin.length < 6) { if (msg) msg.textContent = ""; return; }
@@ -842,10 +952,11 @@ function render() {
   applyMeta();
   const fn = PAGES[PAGE] || PAGES.home;
   $("#app").innerHTML = `<a class="skip" href="#main">Skip to content</a>${header()}<main id="main">${fn()}</main>${footer()}`;
+  if (SC && SC.drawn) SC.drawn($("#app"), C);
   bind();
   reveal();
   slides();
-  if (window.SiteFX) try { window.SiteFX.init({ root: $("#app"), brand: C.theme.introTitle || C.brand.name, badge: C.poweredBy }); } catch (e) {}
+  if (window.SiteFX) try { window.SiteFX.init({ root: $("#app"), brand: C.theme.introTitle || C.brand.name, badge: C.poweredBy, bgs: C.sectionBg, asset: imgUrl, fonts: FONTS, c: C, policy: policyUrl(), again: render }); } catch (e) {}
   setIcon(); fitLines();
 }
 /* Hero background slides on the home page (assets/slides.js, loaded when switched on). */
@@ -904,12 +1015,17 @@ function bindShop() {
 function bindProduct() {
   const box = $(".pd"); if (!box) return;
   const p = prodBy(box.dataset.pid), max = Math.max(1, Number(C.settings.maxQty) || 10);
-  let qty = 1, opt = p.options && p.options.length ? p.options[0] : "";
+  let qty = 1, opt = p.options && p.options.length ? p.options[0] : "", kind = "";
+  // Varieties: one must be chosen before the price is final and the product can be added.
+  const KS = kindsOf(p), full = () => [kind, opt].filter(Boolean).join(" · "), ready = () => !KS.length || !!kind;
+  const gate = () => { for (const id of ["#add", "#buynow"]) { const b = $(id); if (b) { b.disabled = !ready(); if (id === "#add") b.textContent = ready() ? "Add to cart" : "Choose " + (/^[aeiou]/i.test(p.kindName || "variety") ? "an " : "a ") + String(p.kindName || "variety").toLowerCase(); } } };
+  $$(".kindbtns button").forEach((b) => (b.onclick = () => { kind = b.dataset.k; $$(".kindbtns button").forEach((x) => x.setAttribute("aria-pressed", x === b)); const k = KS.find((x) => x.label === kind), pr = $("#pd-price"); if (k && pr) pr.textContent = money(k.price); gate(); }));
+  gate();
   $$(".thumbs button").forEach((b) => (b.onclick = () => { $("#mainimg").innerHTML = `<img src="${esc(imgUrl(p.images[+b.dataset.i]))}" alt="${esc(p.name)}">`; $$(".thumbs button").forEach((x) => x.setAttribute("aria-pressed", x === b)); }));
   $$(".optbtns button").forEach((b) => (b.onclick = () => { opt = b.dataset.o; $$(".optbtns button").forEach((x) => x.setAttribute("aria-pressed", x === b)); }));
   $$("[data-q]").forEach((b) => (b.onclick = () => { qty = Math.min(max, Math.max(1, qty + Number(b.dataset.q))); $("#qty").textContent = qty; }));
-  const add = $("#add"); if (add) add.onclick = () => { addToCart(p.id, opt, qty); toast(`Added to cart · <a href="cart.html">View cart</a>`); };
-  const bn = $("#buynow"); if (bn) bn.onclick = () => { addToCart(p.id, opt, qty); location.href = "checkout.html"; };
+  const add = $("#add"); if (add) add.onclick = () => { if (!ready()) return; addToCart(p.id, full(), qty); toast(`Added to cart · <a href="cart.html">View cart</a>`); };
+  const bn = $("#buynow"); if (bn) bn.onclick = () => { if (!ready()) return; addToCart(p.id, full(), qty); location.href = "checkout.html"; };
   const wb = $("#wish");
   if (wb) {
     const show = () => { const on = !!(WISH && WISH.has(p.id)); wb.setAttribute("aria-pressed", on); wb.textContent = on ? "♥ Saved to wishlist" : "♡ Save to wishlist"; };
@@ -975,7 +1091,22 @@ function bindCheckout() {
       else if (i.type === "tel" && digits(i.value).length < 8) m = "Enter a phone number with at least 8 digits.";
       if (er) er.textContent = m; if (m && !bad) bad = i;
     });
+    // an optional email or phone that was filled in is checked too, and "either one" needs one of them
+    { const em = $("#email", form), ph = $("#phone", form), say = (i, m) => { const er = $("#" + i.id + "-e"); if (er) er.textContent = m; if (!bad) bad = i; };
+      if (em && !em.required && em.value.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em.value.trim())) say(em, "Enter a valid email address.");
+      if (ph && !ph.required && ph.value.trim() && digits(ph.value).length < 8) say(ph, "Enter a phone number with at least 8 digits.");
+      if (!bad && mustGive().either && em && !em.value.trim() && !(ph && ph.value.trim())) say(em, "Enter your email address or your phone number."); }
     if (bad) { bad.focus(); return; }
+    // every shopper verifies their phone number, where the shop asks for that
+    if (CAN.otp && ptsCan() && !ptsProved()) { $("#co-err").textContent = PTS.sent ? "Enter the code we sent to your phone to verify your number." : "Please verify your phone number first (under your details)."; const c = $("#ptscode") || $("#ptsbox button"); if (c) { c.scrollIntoView({ block: "center" }); c.focus(); } return; }
+    // the email address must be proved first, where the shop asks for that: the code is sent now if it wasn't yet
+    if (evCan() && evEmail() && !evTok()) {
+      const tell = (t) => { $("#co-err").textContent = t; const c = $("#evcode"); if (c) c.focus(); };
+      if (EV.sent) return tell("Enter the code we emailed you to verify your email address.");
+      $("#co-err").textContent = ""; await evAct(true);
+      if (!evTok()) return tell(EV.sent ? "We've emailed you a code. Enter it under your email address, then place the order." : EV.msg || "Please verify your email address first.");
+    }
+    { const cc = $("#co-consent", form); if (cc && !cc.checked) { $("#co-err").textContent = "Please tick the box to agree before placing the order."; cc.focus(); return; } AGREED = cc ? "Agreed on " + new Date().toISOString() + ": " + consentWords("") : ""; }
     const fd = Object.fromEntries(new FormData(form).entries());
     if (shipOn() && fd.pin) {
       store.set("pin", String(fd.pin).trim()); const q = shipQuote(fd.pin);
@@ -985,7 +1116,7 @@ function bindCheckout() {
     const lines = cartLines(), ms = methods(), m = ms.find((x) => x.id === fd.pm);
     if (BE() && !PREVIEW) return placeServerOrder(form, fd, lines, m);
     const o = { id: newOrderId(), at: new Date().toISOString(), method: m ? m.id : "none", methodLabel: m ? m.label : "To be arranged",
-      items: lines.map((l) => ({ id: l.p.id, name: l.p.name, opt: l.opt, qty: l.qty, price: Number(l.p.price) })), t: totals(lines),
+      items: lines.map((l) => ({ id: l.p.id, name: l.p.name, opt: l.opt, qty: l.qty, price: Number(l.p.price) })), t: totals(lines), ...(ptsProved() ? { otp: PTS.tok } : {}), ...(evCan() && evTok() ? { et: evTok() } : {}),
       c: { name: fd.name || "", email: fd.email || "", phone: fd.phone || "", address: fd.address || "", city: fd.city || "", pin: fd.pin || "", state: fd.state || "", notes: fd.notes || "", gstin: String(fd.gstin || "").trim().toUpperCase().slice(0, 15) } };
     store.set("me", { name: o.c.name, email: o.c.email, phone: o.c.phone, address: o.c.address, city: o.c.city, pin: o.c.pin, state: o.c.state });
     const placeIt = () => placeOrder(o);
@@ -994,10 +1125,13 @@ function bindCheckout() {
   };
 }
 /** What the shop's database keeps for an order (it shows under Purchased orders). */
-const orderData = (o) => ({ type: "Order", order_no: o.id, name: o.c.name, phone: o.c.phone, email: o.c.email, mode: "Shop order", address: [o.c.address, o.c.city, o.c.pin, o.c.state].filter(Boolean).join(", "),
+let AGREED = ""; // the consent given at checkout, saved with the order
+const orderData = (o) => ({ ...(AGREED ? { consent: AGREED } : {}), type: "Order", order_no: o.id, name: o.c.name, phone: o.c.phone, email: o.c.email, mode: "Shop order", address: [o.c.address, o.c.city, o.c.pin, o.c.state].filter(Boolean).join(", "),
   items: o.items.map((i) => `${i.qty} × ${i.name}${i.opt ? ` (${i.opt})` : ""} = ${money(i.price * i.qty)}`).join("\n"), total: money(o.t.total), payment: o.utr ? "UPI, paid before ordering" : o.rz || o.pg ? `Paid online (${GWNAME[o.method]})` : o.methodLabel, utr: o.utr || "",
-  ...(o.rz ? { rz_order: o.rz.razorpay_order_id, rz_payment: o.rz.razorpay_payment_id, rz_sig: o.rz.razorpay_signature } : {}), ...(o.pg ? { pay_gw: o.pg.gw, pay_ref: o.pg.ref } : {}), notes: o.c.notes, message: orderText(o) });
-const sendOrder = (o) => fetch(HOST.api + "/enquire/" + encodeURIComponent(HOST.site), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ page: "checkout.html", data: orderData(o) }) });
+  ...(o.rz ? { rz_order: o.rz.razorpay_order_id, rz_payment: o.rz.razorpay_payment_id, rz_sig: o.rz.razorpay_signature } : {}), ...(o.pg ? { pay_gw: o.pg.gw, pay_ref: o.pg.ref } : {}), notes: o.c.notes, ...(o.otp ? { otp_token: o.otp } : {}), ...(o.et ? { email_token: o.et } : {}), message: orderText(o) });
+/** The order as the database can price it again (what was bought, and the points asked for). */
+const orderCart = (o) => ({ items: o.items.map((i) => ({ id: i.id, qty: i.qty, opt: i.opt || "" })), pin: o.c.pin || "", points: (o.t && o.t.pts) || 0 });
+const sendOrder = (o) => fetch(HOST.api + "/enquire/" + encodeURIComponent(HOST.site), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ page: "checkout.html", data: orderData(o), cart: orderCart(o) }) });
 async function placeOrder(o) {
   // A shop hosted on the Studio's database keeps the order under Purchased orders too.
   if (!PREVIEW && HOST && HOST.api && HOST.site && o.saved == null) {
@@ -1013,7 +1147,7 @@ async function payGateway(o, lines, err, btn) {
   const g = GWID[o.method], say = (t) => { err.textContent = t; if (btn) { btn.disabled = false; btn.textContent = C.checkout.button || "Place order"; } };
   if (btn) { btn.disabled = true; btn.textContent = "Opening payment…"; } err.textContent = "";
   try {
-    const r = await fetch(HOST.api + "/pay/" + g + "/" + encodeURIComponent(HOST.site), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ back: location.origin + location.pathname, order_no: o.id, total: o.t.total, pin: o.c.pin, name: o.c.name, email: o.c.email, phone: o.c.phone, items: lines.map((l) => ({ id: l.p.id, qty: l.qty })) }) });
+    const r = await fetch(HOST.api + "/pay/" + g + "/" + encodeURIComponent(HOST.site), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ back: location.origin + location.pathname, order_no: o.id, total: o.t.total, pin: o.c.pin, name: o.c.name, email: o.c.email, phone: o.c.phone, items: lines.map((l) => ({ id: l.p.id, qty: l.qty, opt: l.opt || "" })), points: o.t.pts || 0, otp: o.otp || "" }) });
     const j = await r.json().catch(() => null);
     if (!r.ok || !j || !(j.order_id || j.go || j.session)) return say((j && j.error) || "Online payment couldn't start. Please try again, or choose another way to pay.");
     if (g === "rz") {
@@ -1192,38 +1326,41 @@ addEventListener("popstate", render);
    BOOT
    ============================================================ */
 if (PAGE === "checkout") { const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"; s.onload = () => { if ($(".done")) bindCheckout(); }; document.head.appendChild(s); }
+const SCO = { css: 'link[href*="assets/store.css"]', js: "assets/store.js" }; let DREW = false, HAND = false;
 if (PREVIEW) {
   addEventListener("message", (e) => {
     if (e.origin !== location.origin || e.source !== window.parent) return;
     const d = e.data || {};
-    if (d.type === "cms:content" && d.content && typeof d.content === "object") { ASSETS = d.assets || {}; const y = scrollY; C = merge(DEFAULT, d.content); render(); scrollTo(0, y); }
+    if (d.type === "cms:content" && d.content && typeof d.content === "object") { if (SC && SC.take(d.content, { ...SCO, drawn: DREW })) return; DREW = true; ASSETS = d.assets || {}; const y = scrollY; C = merge(DEFAULT, d.content); render(); scrollTo(0, y); }
   });
   window.parent.postMessage({ type: "cms:ready", page: (location.pathname.split("/").pop() || "index.html") + (PAGE === "page" && spCur() ? "?p=" + encodeURIComponent(spCur()) : MNT_Q ? "?maintenance=1" : "") }, location.origin);
 }
 // The live site never shows the template's sample design: it waits for content.json (a returning visitor
 // gets the copy saved on the previous page at once), and only falls back to the defaults if loading fails.
 const CKEY = "site-content:" + location.pathname.replace(/[^/]*$/, "");
-if (PREVIEW) render();
+if (PREVIEW) { if (!(SC && SC.wait())) { DREW = true; render(); } }
 else {
   let shown = "";
-  try { const c = sessionStorage.getItem(CKEY); if (c) { C = merge(DEFAULT, JSON.parse(c)); render(); shown = c; } } catch (e) {}
+  try { const c = sessionStorage.getItem(CKEY); if (c) { const j = JSON.parse(c); if (SC && SC.take(j, SCO)) HAND = true; else { C = merge(DEFAULT, j); render(); shown = c; } } } catch (e) {}
   // A first visit: the page's outline shows while the content is fetched (the first render replaces it).
-  if (!shown && window.SiteSkeleton) window.SiteSkeleton.show($("#app"));
-  const giveUp = setTimeout(() => { if (!shown) { render(); shown = "default"; } }, 6000);
+  if (!shown && !HAND && window.SiteSkeleton) window.SiteSkeleton.show($("#app"));
+  const giveUp = setTimeout(() => { if (!shown && !HAND) { render(); shown = "default"; } }, 6000);
   const fromFile = () => fetch("content.json", { cache: "no-store" }).then((r) => (r.ok ? r.text() : null));
   // Hosted on the Studio's Cloudflare database: content is a public file there.
   const fromCf = () => fetch(HOST.api + "/p/" + encodeURIComponent(HOST.site) + "/content.json", { cache: "no-store" }).then((r) => (r.ok ? r.text() : null)).catch(() => null).then((t) => t || fromFile());
   const fromDb = () => HOST.api ? fromCf() : fetch(HOST.db + "/rest/v1/site_content?select=content&site=eq." + encodeURIComponent(HOST.site), { cache: "no-store", headers: { apikey: HOST.key, ...(/^sb_/.test(HOST.key) ? {} : { Authorization: "Bearer " + HOST.key }) } })
     .then((r) => (r.ok ? r.json() : null)).then((j) => (j && j[0] && j[0].content ? JSON.stringify(j[0].content) : null)).catch(() => null).then((t) => t || fromFile());
-  (HOST ? fromDb() : fromFile()).then((txt) => {
+  if (!HAND) (HOST ? fromDb() : fromFile()).then((txt) => {
     clearTimeout(giveUp);
     if (!txt) { if (!shown) render(); return; }
     try { sessionStorage.setItem(CKEY, txt); } catch (e) {}
     if (txt === shown) return;
-    C = merge(DEFAULT, JSON.parse(txt)); render();
+    const j = JSON.parse(txt); if (SC && SC.take(j, { ...SCO, drawn: !!shown, text: txt })) return;
+    C = merge(DEFAULT, j); render();
   }).catch(() => { clearTimeout(giveUp); if (!shown) render(); });
 }
-addEventListener("hashchange", () => { if (PAGE === "account") render(); });
+if (!HAND) addEventListener("hashchange", () => { if (PAGE === "account") render(); });
+if (SC) SC.untrack();
 })();
 
 // Menu when scrolling (theme.navMode): "" theme default, fixed, hide (hide on scroll down, show on scroll up), scroll (scrolls away)
