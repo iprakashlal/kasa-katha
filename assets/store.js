@@ -345,7 +345,7 @@ function totals(lines = cartLines(), pin = curPin()) {
 function mustGive() {
   const K = C.checkout || {}, n = ["email", "phone", "both", "either"].includes(K.need) ? K.need : "", acc = BE() || !!USER;
   const v = !!CAN.otp && !BE() && !PREVIEW; // every shopper verifies their number: it is always asked for
-  if (!n) return { email: true, phone: v || !!K.askPhone, askPhone: v || !!K.askPhone, either: false };
+  if (!n) return { email: true, phone: v || !!K.askPhone, askPhone: v || !!K.askPhone || !!ME(), either: false }; // (signed in: the other contact is asked for too)
   return { email: acc || n === "email" || n === "both", phone: v || n === "phone" || n === "both", askPhone: true, either: n === "either" && !acc && !v };
 }
 /* Email check (Checkout → “Verify the email address”): a 6-digit code is emailed, and the order carries the proof.
@@ -354,19 +354,21 @@ const EV = { tok: "", email: "", sent: false, msg: "" };
 const evCan = () => !!CAN.em && !BE() && !PREVIEW && !!(HOST && HOST.api && HOST.site);
 const evEmail = () => { const i = $("#email"); return String(i ? i.value : EV.email).trim().toLowerCase(); };
 const evTok = () => (EV.tok && EV.email === evEmail() && +EV.tok.replace(/^s:/, "").split(".")[0] > Date.now() + 60000 ? EV.tok : "");
+/* “Verify” sits inside the box it verifies (a tick once done); the code row and the notes open under the box. */
+const vTick = `<span class="in-tick">✓ Verified</span>`;
+function evSlot() { const t = evTok(); if (ME() && ME().kind === "email") return vTick; return !evCan() || (t && t.startsWith("s:")) ? "" : t ? vTick : `<button type="button" class="in-vbtn" data-ev="send">${EV.sent ? "Resend" : "Verify"}</button>`; }
 function evBox() {
-  if (!evCan()) return "";
-  const bad = EV.msg ? `<p class="err" role="alert">${esc(EV.msg)}</p>` : "", t = evTok();
-  const h = t ? (t.startsWith("s:") ? "" : `<p class="soft"><b>Email address verified.</b></p>`)
-    : EV.sent ? `<div class="f"><label for="evcode">Code we emailed you</label><div class="ptsrow"><input class="in" id="evcode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits"><button type="button" class="btn" data-ev="check">Verify</button></div></div><button type="button" class="rm" data-ev="send">Send a new code</button>`
-    : `<button type="button" class="btn" data-ev="send">Verify this email address</button><p class="soft">We email a 6-digit code to this address before taking the order${mustGive().email ? "" : " (only if you give an email address)"}.</p>`;
-  return `<div class="ptsbox" aria-live="polite">${h}${bad}</div>`;
+  if (!evCan() || evTok() || (ME() && ME().kind === "email")) return "";
+  const bad = EV.msg ? `<span class="err" role="alert">${esc(EV.msg)}</span>` : "";
+  return (EV.sent ? `<div class="in-v has"><input class="in" id="evcode" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="Enter the code" aria-label="Code we emailed you"><button type="button" class="in-vbtn" data-ev="check">Confirm</button></div><span class="soft vnote">Enter the code we emailed you.</span>`
+    : `<span class="soft vnote">We email a code to verify this address before taking the order${mustGive().email ? "" : " (only if you give one)"}.</span>`) + bad;
 }
-function evDraw() { const b = $("#evbox"); if (b) b.innerHTML = evBox(); }
+function vDraw(slot, box, a, b) { const s = $(slot), x = $(box); if (s) { s.innerHTML = a; s.parentNode.classList.toggle("has", !!a); } if (x) x.innerHTML = b; }
+function evDraw() { vDraw("#evslot", "#evbox", evSlot(), evBox()); }
 async function evAct(send) {
   const email = evEmail(), code = String(($("#evcode") || {}).value || "").trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { EV.msg = "Enter your email address first."; return evDraw(); }
-  if (!send && !/^\d{6}$/.test(code)) { EV.msg = "Enter the 6-digit code."; return evDraw(); }
+  if (!send && !/^\d{4,8}$/.test(code)) { EV.msg = "Enter the code."; return evDraw(); }
   EV.msg = "";
   try {
     const r = await fetch(HOST.api + "/eotp/" + (send ? "send" : "check") + "/" + encodeURIComponent(HOST.site), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, code }) }), j = await r.json().catch(() => null);
@@ -382,37 +384,39 @@ async function evAct(send) {
 const PTS = { tok: "", phone: "", info: null, use: false, sent: false, msg: "", via: "" };
 const VIA = { wa: "on WhatsApp", sms: "by SMS" }, viaNow = () => (CAN.via.includes(PTS.via) ? PTS.via : CAN.via[0] || "wa");
 const ptsOn = () => !!(C.loyalty && C.loyalty.on) && !!CAN.pts; // points can be spent here
-const ptsCan = () => (ptsOn() || !!CAN.otp) && !BE() && !PREVIEW && !!(HOST && HOST.api && HOST.site) && mustGive().askPhone;
-/** Where the verify box sits: under the details when every shopper must verify, else beside the summary (points only). */
-const ptsSlot = (where) => (where === (CAN.otp ? "top" : "side") ? `<div id="ptsbox">${ptsBox()}</div>` : "");
+const ptsCan = () => (ptsOn() || !!CAN.otp) && !BE() && !PREVIEW && !!(HOST && HOST.api && HOST.site) && (mustGive().askPhone || !!ME());
 const ptsPhone = () => { const i = $("#phone"); return i ? i.value : PTS.phone; };
-const ptsProved = () => !!PTS.tok && +PTS.tok.split(".")[0] > Date.now() + 60000 && digits(PTS.phone).length >= 8 && digits(ptsPhone()) === digits(PTS.phone);
+/** Enough to show and spend points: a verified number, or being signed in. */
+const ptsOK = () => ptsProved() || !!ME();
+const ptsProved = () => !!(ME() && ME().kind === "phone") || !!PTS.tok && +PTS.tok.split(".")[0] > Date.now() + 60000 && digits(PTS.phone).length >= 8 && digits(ptsPhone()) === digits(PTS.phone);
 function ptsFor(sub) {
   const P = PTS.info;
-  if (PAGE !== "checkout" || !P || !PTS.use || !ptsCan() || !ptsOn() || !ptsProved() || !(P.worth > 0) || P.points < Math.max(1, P.min || 0) || !(sub > 0)) return { pts: 0, off: 0 };
+  if (PAGE !== "checkout" || !P || !PTS.use || !ptsCan() || !ptsOn() || !ptsOK() || !(P.worth > 0) || P.points < Math.max(1, P.min || 0) || !(sub > 0)) return { pts: 0, off: 0 };
   const pts = Math.max(0, Math.min(Math.floor(P.points), Math.floor((sub * P.maxPct) / 100 / P.worth)));
   return { pts, off: Math.round(pts * P.worth * 100) / 100 };
 }
-function ptsBox() {
-  if (!ptsCan()) return "";
-  const P = PTS.info, bad = PTS.msg ? `<p class="err" role="alert">${esc(PTS.msg)}</p>` : "", n = (k) => `${k} point${k === 1 ? "" : "s"}`;
-  let h; const ways = CAN.via.map((v) => VIA[v]).join(" or "), sendBtns = (lead, cls) => CAN.via.map((v) => `<button type="button" class="${cls}" data-pts="send" data-via="${v}">${lead} ${VIA[v]}</button>`).join(" ");
-  if (ptsProved() && (P || !ptsOn())) {
-    const t = totals(), ok = CAN.otp ? `<p class="soft"><b>Phone number verified.</b></p>` : "";
-    h = !ptsOn() || !P ? ok : ok + (P.points >= Math.max(1, P.min || 0) && P.worth > 0
-      ? `<label class="co-consent"><input type="checkbox" id="usepts"${PTS.use ? " checked" : ""}> <span><b>Use my points</b><br><span class="soft">You have ${n(P.points)}${t.pts ? `: ${t.pts} used here, ${esc(money(t.ptsOff))} off` : `, worth up to ${esc(money(Math.round(P.points * P.worth * 100) / 100))}`}.</span></span></label>`
-      : `<p class="soft">You have ${n(P.points)}.${P.min > P.points ? ` Points can be used from ${P.min}.` : ""}</p>`);
-  } else if (PTS.sent) h = `<div class="f"><label for="ptscode">Code we sent you ${VIA[viaNow()]}</label><div class="ptsrow"><input class="in" id="ptscode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits"><button type="button" class="btn" data-pts="check">Verify</button></div></div>${sendBtns("Send a new code", "rm")}`;
-  else if (CAN.otp) h = `${sendBtns("Verify my number", "btn")}<p class="soft">We send a 6-digit code ${ways} to the phone number you entered, before taking the order.${ptsOn() ? " It also shows the points you can take off this order." : ""}</p>`;
-  else h = `${sendBtns("Use my points: send a code", "btn")}<p class="soft">Optional. We send a 6-digit code ${ways} to the phone number you entered, then show the points you can take off this order.</p>`;
-  const e = ptsOn() || (C.loyalty && C.loyalty.on) ? totals().earn : 0;
-  return `<div class="ptsbox" aria-live="polite">${h}${bad}${e ? `<p class="soft">This order earns you ${n(e)}.</p>` : ""}</div>`;
+function pvSlot() { if (ME() && ME().kind === "phone") return vTick; return !ptsCan() || (ME() && !CAN.otp) ? "" : ptsProved() ? vTick : `<button type="button" class="in-vbtn" data-pts="send">${PTS.sent ? "Resend" : "Verify"}</button>`; }
+function pvBox() {
+  if (!ptsCan() || ptsProved() || (ME() && !CAN.otp)) return "";
+  const ways = CAN.via.map((v) => VIA[v]).join(" or "), bad = PTS.msg ? `<span class="err" role="alert">${esc(PTS.msg)}</span>` : "";
+  return (PTS.sent ? `<div class="in-v has"><input class="in" id="ptscode" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="Enter the code" aria-label="Code we sent you ${VIA[viaNow()]}"><button type="button" class="in-vbtn" data-pts="check">Confirm</button></div><span class="soft vnote">Enter the code we sent ${VIA[viaNow()]}.</span>`
+    : `${CAN.via.length > 1 ? `<div class="in-via" role="group" aria-label="Send the code">${CAN.via.map((v) => `<button type="button" data-pts="via" data-via="${v}" aria-pressed="${viaNow() === v}">${v === "wa" ? "WhatsApp" : "SMS"}</button>`).join("")}</div>` : ""}<span class="soft vnote">${CAN.otp ? `We send a code ${ways} to verify this number before taking the order.` : `Optional: verify ${ways} to use your points.`}</span>`) + bad;
 }
-function ptsDraw() { const b = $("#ptsbox"); if (b) b.innerHTML = ptsBox(); const rows = $("#sumrows"); if (rows && PAGE === "checkout") rows.innerHTML = summaryRows(totals()); }
+/** The points themselves, beside the order summary: the tick box once the number is verified, and what this order earns. */
+function ptsBox() {
+  const P = PTS.info, n = (k) => `${k} point${k === 1 ? "" : "s"}`, e = C.loyalty && C.loyalty.on ? totals().earn : 0; let h = "";
+  if (ptsCan() && ptsOn() && ptsOK() && P) { const t = totals();
+    h = P.points >= Math.max(1, P.min || 0) && P.worth > 0
+      ? `<label class="co-consent"><input type="checkbox" id="usepts"${PTS.use ? " checked" : ""}> <span><b>Use my points</b><br><span class="soft">You have ${n(P.points)}${t.pts ? `: ${t.pts} used here, ${esc(money(t.ptsOff))} off` : `, worth up to ${esc(money(Math.round(P.points * P.worth * 100) / 100))}`}.</span></span></label>`
+      : `<p class="soft">You have ${n(P.points)}.${P.min > P.points ? ` Points can be used from ${P.min}.` : ""}</p>`; }
+  else if (ptsCan() && ptsOn() && !ME()) h = `<p class="soft">Verify your phone number (under Your details) to use your points.</p>`;
+  return h || e ? `<div class="ptsbox" aria-live="polite">${h}${e ? `<p class="soft">This order earns you ${n(e)}.</p>` : ""}</div>` : "";
+}
+function ptsDraw() { vDraw("#pvslot", "#pvbox", pvSlot(), pvBox()); const b = $("#ptsbox"); if (b) b.innerHTML = ptsBox(); const rows = $("#sumrows"); if (rows && PAGE === "checkout") rows.innerHTML = summaryRows(totals()); }
 async function ptsAct(send) {
   const phone = ptsPhone(), code = String(($("#ptscode") || {}).value || "").trim(), at = HOST.api + "/", site = encodeURIComponent(HOST.site), post = (path, body) => fetch(at + path + "/" + site, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (digits(phone).length < 8) { PTS.msg = "Enter your phone number under Your details first."; return ptsDraw(); }
-  if (!send && !/^\d{6}$/.test(code)) { PTS.msg = "Enter the 6-digit code."; return ptsDraw(); }
+  if (!send && !/^\d{4,8}$/.test(code)) { PTS.msg = "Enter the code."; return ptsDraw(); }
   PTS.msg = "";
   try {
     const r = await post("otp/" + (send ? "send" : "check"), { phone, code, via: viaNow() }), j = await r.json().catch(() => null);
@@ -429,9 +433,31 @@ async function ptsAct(send) {
 let CAN = { rz: "", pg: [], pts: false, em: false, otp: false, via: ["wa"] };
 const GWID = { razorpay: "rz", cashfree: "cf", phonepe: "pe", stripe: "st", paypal: "pp" }, GWNAME = { razorpay: "Razorpay", cashfree: "Cashfree", phonepe: "PhonePe", stripe: "Stripe", paypal: "PayPal" };
 const dbPay = (m) => !BE() && !PREVIEW && !!(HOST && HOST.api && HOST.site) && (m === "razorpay" ? !!CAN.rz : CAN.pg.includes(GWID[m]));
+/* Customer accounts (assets/acct.js, content.account): the shopper signs in before checkout, and "My account" in the
+   header shows their orders and points. A signed-in phone number or email address counts as verified. */
+const ME = () => (window.SiteAcct && SiteAcct.on() ? SiteAcct.user() : null);
+let ADDR_AT = 0; // which saved address the checkout is using
+const mustSign = () => !!(window.SiteAcct && SiteAcct.on() && !SiteAcct.user() && !SiteAcct.skipped() && !PREVIEW);
+let acctP = null;
+const loadAcct = () => (acctP ||= new Promise((ok, no) => { if (window.SiteAcct) return ok(); const s = document.createElement("script"); s.src = "assets/acct.js"; s.onload = () => ok(); s.onerror = no; document.head.appendChild(s); }));
+async function ptsMine() { // a signed-in shopper's points, without another code
+  if (!ME() || !ptsOn() || PAGE !== "checkout") return;
+  try { const r = await fetch(HOST.api + "/points/" + encodeURIComponent(HOST.site), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: ptsPhone(), email: evEmail(), acct: ME().pass }) }); if (r.ok) { PTS.info = await r.json(); ptsDraw(); } } catch (e) { /* points are a bonus */ }
+}
+/** How the checkout's sections are drawn (Theme & layout → Account customization): cards, numbered steps, or plain. */
+const coLook = () => { const v = C.account && C.account.ui && C.account.ui.checkout; return ["cards", "steps", "plain"].includes(v) ? v : "cards"; };
+/* The Studio's preview has no database: a made-up account stands in, so the look can be chosen. */
+function previewAcct() {
+  if (!PREVIEW || !(C.account && C.account.on) || BE()) return;
+  loadAcct().then(() => { const by = C.account.by === "email" || C.account.by === "either" ? C.account.by : "phone", had = !!(window.SiteAcct && SiteAcct.on());
+    SiteAcct.init({ demo: true, api: "", site: "preview", kind: "store", addresses: true, ui: C.account.ui || {}, acct: { by, phone: by === "email" ? [] : ["wa"], email: by !== "phone" }, money: (n) => money(n), img: (path) => imgUrl({ path }), demoItems: (C.products || []).slice(0, 3).map((p) => ({ n: p.name, i: (p.images && p.images[0] && p.images[0].path) || "" })), biz: { name: (C.brand && C.brand.name) || "" }, onChange: () => render() });
+    if (!had) render(); }).catch(() => {});
+}
 function askCan() {
-  if (askCan.done || PREVIEW || BE() || !(HOST && HOST.api && HOST.site) || PAGE !== "checkout") return; askCan.done = true;
-  fetch(HOST.api + "/site/" + encodeURIComponent(HOST.site) + "/can", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((j) => { if (!j) return; CAN = { rz: String(j.rz || ""), pg: Array.isArray(j.pg) ? j.pg : [], pts: !!j.pts, em: !!j.em, otp: !!j.otp, via: Array.isArray(j.via) && j.via.length ? j.via.filter((v) => v === "wa" || v === "sms") : ["wa"] }; if (!cameBack() && (CAN.rz || CAN.pg.length || CAN.otp)) render(); else { ptsDraw(); evDraw(); } }).catch(() => {});
+  if (askCan.done || PREVIEW || BE() || !(HOST && HOST.api && HOST.site) || (PAGE !== "checkout" && !(C.account && C.account.on))) return; askCan.done = true;
+  fetch(HOST.api + "/site/" + encodeURIComponent(HOST.site) + "/can", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((j) => { if (!j) return; CAN = { rz: String(j.rz || ""), pg: Array.isArray(j.pg) ? j.pg : [], pts: !!j.pts, em: !!j.em, otp: !!j.otp, via: Array.isArray(j.via) && j.via.length ? j.via.filter((v) => v === "wa" || v === "sms") : ["wa"] }; if (PAGE === "checkout") { if (!cameBack() && (CAN.rz || CAN.pg.length || CAN.otp)) render(); else { ptsDraw(); evDraw(); } }
+    if (j.acct) loadAcct().then(() => { const redo = () => { if (!ME()) { PTS.info = null; PTS.use = false; } if (!$(".done")) render(); ptsMine(); };
+      SiteAcct.init({ api: HOST.api, site: HOST.site, kind: "store", addresses: true, ui: (C.account && C.account.ui) || {}, acct: j.acct, money: (n) => money(n), img: (path) => imgUrl({ path }), biz: (() => { const L = C.legal || {}, K = C.contact || {}; return { name: L.name || (C.brand && C.brand.name) || "", address: L.address || K.address || "", phone: L.phone || K.phone || "", email: L.email || K.email || "", gstin: L.gstin || "" }; })(), onChange: redo }); redo(); }).catch(() => {}); }).catch(() => {});
 }
 function methods() {
   const P = C.payments, out = [], own = (n) => `You pay on ${n}'s secure page and come back here. The order is placed as soon as you've paid.`;
@@ -537,6 +563,7 @@ function header() {
   <header class="hdr"><div class="wrap" style="position:relative">
     <a class="brand" href="index.html"><span class="mark" style="${markCss()}">${B.logoVideo ? `<video src="${esc(imgUrl(B.logoVideo))}"${B.logo ? ` poster="${esc(imgUrl(B.logo))}"` : ""} autoplay muted loop playsinline aria-hidden="true" style="${B.logoFit === "wide" ? `height:${markH()}px;width:auto;max-width:min(${markH() * 6}px,52vw);object-fit:contain` : "width:100%;height:100%;object-fit:cover"};display:block"></video>` : B.logo ? `<img src="${esc(imgUrl(B.logo))}" alt=""${B.logoFit === "wide" ? ` style="height:${markH()}px;width:auto;max-width:min(${markH() * 6}px,52vw);object-fit:contain"` : ""}>` : esc(initials)}</span>${B.showName === false && (B.logo || B.logoVideo) ? "" : `<b>${esc(B.name)}</b>`}</a>
     <nav class="nav" id="nav" aria-label="Main"><a href="index.html"${cur("home")}>${esc(N.home)}</a><a href="shop.html"${cur("shop")}>${esc(N.shop)}</a>${swOn() && C.warranty.inNav ? `<a href="warranty.html"${cur("warranty")}>${esc(C.warranty.navLabel || "Warranty")}</a>` : ""}${N.showPortfolio ? `<a href="portfolio.html"${cur("portfolio")}>${esc(N.portfolio)}</a>` : ""}${spList().filter((p) => p.inNav).map((p) => `<a href="${esc(spHref(p))}"${PAGE === "page" && spSlug(p) === spSlug({ slug: spCur() }) ? ' aria-current="page"' : ""}>${esc(p.navLabel || p.title)}</a>`).join("")}${ACCOUNTS() ? `<a href="account.html"${cur("account")}>${esc(N.account)}</a>` : ""}</nav>
+    ${window.SiteAcct && SiteAcct.on() ? `<a class="cartlink acctlink" href="#" data-acct><span class="t">${ME() ? "My account" : "Sign in"}</span></a>` : ""}
     <a class="cartlink" href="cart.html"${cur("cart")}><span class="t">${esc(N.cart)}</span><span class="n" data-cartcount>${cartCount()}</span></a>
     <button class="menubtn" type="button" aria-controls="nav" aria-expanded="false" aria-label="Menu">☰</button>
   </div></header>`;
@@ -662,16 +689,21 @@ const PAGES = {
     if (!lines.length) return `<section class="page-h"><div class="wrap"><h1>${esc(C.checkout.title)}</h1></div></section><div class="wrap" style="padding-bottom:80px"><div class="empty"><p>Your cart is empty.</p><a class="btn pri" href="shop.html">Start shopping</a></div></div>`;
     const K = C.checkout, ms = methods(), t = totals(lines);
     if (ACCOUNTS() && C.backend.requireLogin && !USER && !PREVIEW) return `<section class="page-h"><div class="wrap"><h1 class="fit">${ml(K.title)}</h1></div></section><div class="wrap" style="padding-bottom:80px"><div class="box" style="max-width:520px"><h2>Sign in to check out</h2><p class="soft">We'll send a 6-digit code to your email. Your orders then appear in your account.</p><a class="btn pri" href="account.html?next=checkout.html">Sign in</a></div></div>`;
-    const me = { ...store.get("me", {}), ...(PROFILE ? { name: PROFILE.name || "", phone: PROFILE.phone || "", ...(PROFILE.address || {}) } : {}), ...(USER ? { email: USER.email } : {}) };
-    const fld = (id, label, type = "text", req = true, full = false, ac = "") => `<div class="f${full ? " full" : ""}"><label for="${id}">${esc(label)}${req ? "" : ' <span class="soft">(optional)</span>'}</label><input class="in" id="${id}" name="${id}" type="${type}"${req ? " required" : ""}${ac ? ` autocomplete="${ac}"` : ""}${id === "email" && USER ? " readonly" : ""} value="${esc(me[id] || "")}"><span class="err" id="${id}-e"></span></div>`;
+    if (mustSign()) return `<section class="page-h"><div class="wrap"><h1 class="fit">${ml(K.title)}</h1></div></section><div class="wrap" style="padding-bottom:80px"><div id="sa-gate"></div></div>`;
+    { const k = window.SiteAcct && !ME() && SiteAcct.skipped(); if (k) { EV.tok = k.token; EV.email = k.email; } }
+    const SP = ME() ? SiteAcct.profile() : null, SA = (SP && SP.addresses) || [], sa = SA[Math.min(ADDR_AT, SA.length - 1)] || null;
+    const saved = SP ? { ...(SP.name ? { name: SP.name } : {}), ...(ME().kind === "phone" && SP.email ? { email: SP.email } : {}), ...(ME().kind === "email" && SP.phone ? { phone: SP.phone } : {}), ...(sa ? { address: [sa.line1, sa.line2].filter(Boolean).join(", "), city: sa.city, pin: sa.pin, state: sa.state } : {}) } : {};
+    const me = { ...store.get("me", {}), ...saved, ...(PROFILE ? { name: PROFILE.name || "", phone: PROFILE.phone || "", ...(PROFILE.address || {}) } : {}), ...(USER ? { email: USER.email } : {}), ...(ME() ? (ME().kind === "phone" ? { phone: ME().typed || "+" + ME().key } : { email: ME().key }) : window.SiteAcct && SiteAcct.skipped() ? { email: SiteAcct.skipped().email } : {}) };
+    const V = { email: ["ev", evSlot(), evBox()], phone: ["pv", pvSlot(), pvBox()] };
+    const fld = (id, label, type = "text", req = true, full = false, ac = "") => `<div class="f${full ? " full" : ""}"><label for="${id}">${esc(label)}${req ? "" : ' <span class="soft">(optional)</span>'}</label>${V[id] ? `<div class="in-v${V[id][1] ? " has" : ""}">` : ""}<input class="in" id="${id}" name="${id}" type="${type}"${req ? " required" : ""}${ac ? ` autocomplete="${ac}"` : ""}${(id === "email" && USER) || (ME() && ME().kind === id) ? " readonly" : ""} value="${esc(me[id] || "")}">${V[id] ? `<span id="${V[id][0]}slot">${V[id][1]}</span></div>` : ""}<span class="err" id="${id}-e"></span>${V[id] ? `<div class="vbox" id="${V[id][0]}box">${V[id][2]}</div>` : ""}</div>`;
     return `<section class="page-h"><div class="wrap"><h1 class="fit">${ml(K.title)}</h1>${K.intro ? `<p>${ml(K.intro)}</p>` : ""}</div></section>
-    <form class="wrap two" id="co" novalidate><div class="form">
-      <div class="box"><h2>Your details</h2><div class="fgrid">${fld("name", "Full name", "text", true, false, "name")}${fld("email", "Email", "email", mustGive().email, false, "email")}${mustGive().askPhone ? fld("phone", "Phone", "tel", mustGive().phone, false, "tel") : ""}</div>${mustGive().either ? `<p class="soft" style="font-size:13.5px;margin-top:8px">Give your email address or your phone number (or both), so we can reach you about the order.</p>` : ""}<div id="evbox">${evBox()}</div>${ptsSlot("top")}</div>
-      ${K.askAddress ? `<div class="box"><h2>Delivery address</h2><div class="fgrid">${fld("address", "Address", "text", true, true, "street-address")}${fld("city", "City", "text", true, false, "address-level2")}${fld("pin", "PIN / postcode", "text", true, false, "postal-code")}${fld("state", "State", "text", true, false, "address-level1")}${gstOn() && C.gst.askGstin ? fld("gstin", "GSTIN, for a business invoice", "text", false, true) : ""}</div>${shipOn() ? `<p class="soft" id="pin-msg" role="status" style="font-size:14px;margin-top:8px"></p>` : ""}</div>` : ""}
+    <form class="wrap two" id="co" data-look="${esc(coLook())}" novalidate><div class="form">
+      <div class="box"><h2>Your details</h2>${ME() ? `<p class="soft" style="font-size:13.5px;margin:-6px 0 12px">Signed in as <b>${esc(/@/.test(ME().key) ? ME().key : "+" + ME().key)}</b> · <a href="#" data-acct>My account</a></p>` : ""}<div class="fgrid">${fld("name", "Full name", "text", true, false, "name")}${fld("email", "Email", "email", mustGive().email, false, "email")}${mustGive().askPhone ? fld("phone", "Phone", "tel", mustGive().phone, false, "tel") : ""}</div>${mustGive().either ? `<p class="soft" style="font-size:13.5px;margin-top:8px">Give your email address or your phone number (or both), so we can reach you about the order.</p>` : ""}</div>
+      ${K.askAddress ? `<div class="box"><h2>Delivery address</h2>${SA.length > 1 ? `<div class="f" style="margin-bottom:12px"><label for="addrpick">Use a saved address</label><select class="in" id="addrpick">${SA.map((a, i) => `<option value="${i}"${i === Math.min(ADDR_AT, SA.length - 1) ? " selected" : ""}>${esc([a.label, a.line1, a.city].filter(Boolean).join(" · "))}</option>`).join("")}</select></div>` : ""}<div class="fgrid">${fld("address", "Address", "text", true, true, "street-address")}${fld("city", "City", "text", true, false, "address-level2")}${fld("pin", "PIN / postcode", "text", true, false, "postal-code")}${fld("state", "State", "text", true, false, "address-level1")}${gstOn() && C.gst.askGstin ? fld("gstin", "GSTIN, for a business invoice", "text", false, true) : ""}</div>${shipOn() ? `<p class="soft" id="pin-msg" role="status" style="font-size:14px;margin-top:8px"></p>` : ""}</div>` : ""}
       ${K.askNotes ? `<div class="box"><div class="f"><label for="notes">Notes <span class="soft">(optional)</span></label><textarea class="in" id="notes" name="notes" rows="3"></textarea></div></div>` : ""}
       <div class="box"><h2>Payment</h2>${ms.length ? `<div class="pays" role="radiogroup" aria-label="Payment method">${ms.map((m, i) => `<label class="pay"><input type="radio" name="pm" value="${m.id}"${i === 0 ? " checked" : ""}><div><b>${esc(m.label)}</b><span>${esc(m.desc)}</span></div></label>`).join("")}</div>` : `<p class="note">Online payment isn't set up yet. Place the order and we'll contact you about payment.</p>`}</div>
     </div>
-    <aside class="sum"><h2>Order</h2><div class="mini">${lines.map((l) => `<div class="it"><div class="im">${pimg(l.p)}</div><div>${esc(l.p.name)}${l.opt ? `<br><span class="soft">${esc(l.opt)}</span>` : ""} × ${l.qty}</div><b>${esc(money(l.p.price * l.qty))}</b></div>`).join("")}</div><div id="sumrows">${summaryRows(t)}</div>${ptsSlot("side")}
+    <aside class="sum"><h2>Order</h2><div class="mini">${lines.map((l) => `<div class="it"><div class="im">${pimg(l.p)}</div><div>${esc(l.p.name)}${l.opt ? `<br><span class="soft">${esc(l.opt)}</span>` : ""} × ${l.qty}</div><b>${esc(money(l.p.price * l.qty))}</b></div>`).join("")}</div><div id="sumrows">${summaryRows(t)}</div><div id="ptsbox">${ptsBox()}</div>
       ${consentWords("") ? `<label class="co-consent"><input type="checkbox" id="co-consent"> <span>${esc(consentWords(""))}</span></label>` : ""}
       <p class="err" id="co-err" role="alert"></p><button class="btn pri block" type="submit">${esc(K.button)}</button><p class="soft" style="font-size:13px">${BE() ? "You'll see the exact total before you pay." : "Nothing is charged yet. You'll pay and send the order on the next screen."}</p></aside></form>`;
   },
@@ -881,14 +913,16 @@ function lang() { if (window.SiteLang) window.SiteLang.mount(C, { navs: ["#nav"]
 document.addEventListener("click", (e) => {
   const b = e.target.closest && e.target.closest("[data-pinchk]");
   if (b) { const i = $("#pinchk"), pin = i ? i.value.replace(/\D/g, "").slice(0, 6) : ""; const out = $("#pinres"); if (pin.length < 6) { if (out) { out.textContent = "Enter the 6 digits of your PIN code."; out.style.color = ""; } return; } store.set("pin", pin); const r = pinSays(pin); if (out) { out.textContent = r.text; out.style.color = r.ok === false ? "var(--sale,#c0392b)" : ""; } const rows = $("#sumrows"); if (rows) rows.innerHTML = summaryRows(totals()); return; }
+  const ab = e.target.closest && e.target.closest("[data-acct]");
+  if (ab) { e.preventDefault(); if (window.SiteAcct) SiteAcct.open(); return; }
   const eb = e.target.closest && e.target.closest("[data-ev]");
   if (eb) { evAct(eb.getAttribute("data-ev") === "send"); return; }
   const pb = e.target.closest && e.target.closest("[data-pts]");
-  if (pb) { const v = pb.getAttribute("data-via"); if (v) PTS.via = v; ptsAct(pb.getAttribute("data-pts") === "send"); return; }
+  if (pb) { const v = pb.getAttribute("data-via"); if (v) PTS.via = v; if (pb.getAttribute("data-pts") === "via") { PTS.sent = false; ptsDraw(); } else ptsAct(pb.getAttribute("data-pts") === "send"); return; }
   const v = e.target.closest && e.target.closest("[data-inv]");
   if (v) { const o = invOrder(v.getAttribute("data-inv")); if (o) openInvoice(o); }
 });
-document.addEventListener("change", (e) => { if (e.target && e.target.id === "usepts") { PTS.use = e.target.checked; ptsDraw(); } });
+document.addEventListener("change", (e) => { if (e.target && e.target.id === "addrpick") { ADDR_AT = +e.target.value || 0; const k = $("#co"); if (k) { const m = store.get("me", {}); for (const i of ["name", "email", "phone"]) { const el = $("#" + i, k); if (el) m[i] = el.value; } store.set("me", m); } render(); return; } if (e.target && e.target.id === "usepts") { PTS.use = e.target.checked; ptsDraw(); } });
 document.addEventListener("input", (e) => {
   if (e.target && e.target.id === "phone" && PTS.tok) ptsDraw(); // a changed number is no longer the proved one
   if (e.target && e.target.id === "email" && (EV.tok || EV.sent)) { EV.sent = false; evDraw(); } // nor a changed email address
@@ -943,7 +977,7 @@ function maintGate(again) {
   return true;
 }
 function render() {
-  askCan();
+  askCan(); previewAcct();
   if (langGate()) return;
   applyTheme(C.theme);
   if (maintGate(render)) return;
@@ -984,6 +1018,7 @@ function bind() {
   if (PAGE === "shop") bindShop();
   if (PAGE === "product") bindProduct();
   if (PAGE === "cart") bindCart();
+  { const g = $("#sa-gate"); if (g && window.SiteAcct) SiteAcct.gate(g); }
   if (PAGE === "checkout") bindCheckout();
   if (PAGE === "account") bindAccount();
   if (PAGE === "warranty") swMount();
@@ -1098,9 +1133,9 @@ function bindCheckout() {
       if (!bad && mustGive().either && em && !em.value.trim() && !(ph && ph.value.trim())) say(em, "Enter your email address or your phone number."); }
     if (bad) { bad.focus(); return; }
     // every shopper verifies their phone number, where the shop asks for that
-    if (CAN.otp && ptsCan() && !ptsProved()) { $("#co-err").textContent = PTS.sent ? "Enter the code we sent to your phone to verify your number." : "Please verify your phone number first (under your details)."; const c = $("#ptscode") || $("#ptsbox button"); if (c) { c.scrollIntoView({ block: "center" }); c.focus(); } return; }
+    if (CAN.otp && ptsCan() && !ptsProved()) { $("#co-err").textContent = PTS.sent ? "Enter the code we sent to your phone to verify your number." : "Please verify your phone number first."; const c = $("#ptscode") || $("[data-pts=send]"); if (c) { c.scrollIntoView({ block: "center" }); c.focus(); } return; }
     // the email address must be proved first, where the shop asks for that: the code is sent now if it wasn't yet
-    if (evCan() && evEmail() && !evTok()) {
+    if (evCan() && evEmail() && !evTok() && !(ME() && ME().kind === "email")) {
       const tell = (t) => { $("#co-err").textContent = t; const c = $("#evcode"); if (c) c.focus(); };
       if (EV.sent) return tell("Enter the code we emailed you to verify your email address.");
       $("#co-err").textContent = ""; await evAct(true);
@@ -1116,7 +1151,7 @@ function bindCheckout() {
     const lines = cartLines(), ms = methods(), m = ms.find((x) => x.id === fd.pm);
     if (BE() && !PREVIEW) return placeServerOrder(form, fd, lines, m);
     const o = { id: newOrderId(), at: new Date().toISOString(), method: m ? m.id : "none", methodLabel: m ? m.label : "To be arranged",
-      items: lines.map((l) => ({ id: l.p.id, name: l.p.name, opt: l.opt, qty: l.qty, price: Number(l.p.price) })), t: totals(lines), ...(ptsProved() ? { otp: PTS.tok } : {}), ...(evCan() && evTok() ? { et: evTok() } : {}),
+      items: lines.map((l) => ({ id: l.p.id, name: l.p.name, opt: l.opt, qty: l.qty, price: Number(l.p.price) })), t: totals(lines), ...(ptsProved() && PTS.tok ? { otp: PTS.tok } : {}), ...(ME() ? { ac: ME().pass } : {}), ...(evCan() && evTok() ? { et: evTok() } : {}),
       c: { name: fd.name || "", email: fd.email || "", phone: fd.phone || "", address: fd.address || "", city: fd.city || "", pin: fd.pin || "", state: fd.state || "", notes: fd.notes || "", gstin: String(fd.gstin || "").trim().toUpperCase().slice(0, 15) } };
     store.set("me", { name: o.c.name, email: o.c.email, phone: o.c.phone, address: o.c.address, city: o.c.city, pin: o.c.pin, state: o.c.state });
     const placeIt = () => placeOrder(o);
@@ -1128,7 +1163,7 @@ function bindCheckout() {
 let AGREED = ""; // the consent given at checkout, saved with the order
 const orderData = (o) => ({ ...(AGREED ? { consent: AGREED } : {}), type: "Order", order_no: o.id, name: o.c.name, phone: o.c.phone, email: o.c.email, mode: "Shop order", address: [o.c.address, o.c.city, o.c.pin, o.c.state].filter(Boolean).join(", "),
   items: o.items.map((i) => `${i.qty} × ${i.name}${i.opt ? ` (${i.opt})` : ""} = ${money(i.price * i.qty)}`).join("\n"), total: money(o.t.total), payment: o.utr ? "UPI, paid before ordering" : o.rz || o.pg ? `Paid online (${GWNAME[o.method]})` : o.methodLabel, utr: o.utr || "",
-  ...(o.rz ? { rz_order: o.rz.razorpay_order_id, rz_payment: o.rz.razorpay_payment_id, rz_sig: o.rz.razorpay_signature } : {}), ...(o.pg ? { pay_gw: o.pg.gw, pay_ref: o.pg.ref } : {}), notes: o.c.notes, ...(o.otp ? { otp_token: o.otp } : {}), ...(o.et ? { email_token: o.et } : {}), message: orderText(o) });
+  ...(o.rz ? { rz_order: o.rz.razorpay_order_id, rz_payment: o.rz.razorpay_payment_id, rz_sig: o.rz.razorpay_signature } : {}), ...(o.pg ? { pay_gw: o.pg.gw, pay_ref: o.pg.ref } : {}), notes: o.c.notes, ...(o.otp ? { otp_token: o.otp } : {}), ...(o.et ? { email_token: o.et } : {}), ...(o.ac ? { acct_token: o.ac } : {}), message: orderText(o) });
 /** The order as the database can price it again (what was bought, and the points asked for). */
 const orderCart = (o) => ({ items: o.items.map((i) => ({ id: i.id, qty: i.qty, opt: i.opt || "" })), pin: o.c.pin || "", points: (o.t && o.t.pts) || 0 });
 const sendOrder = (o) => fetch(HOST.api + "/enquire/" + encodeURIComponent(HOST.site), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ page: "checkout.html", data: orderData(o), cart: orderCart(o) }) });
@@ -1147,7 +1182,7 @@ async function payGateway(o, lines, err, btn) {
   const g = GWID[o.method], say = (t) => { err.textContent = t; if (btn) { btn.disabled = false; btn.textContent = C.checkout.button || "Place order"; } };
   if (btn) { btn.disabled = true; btn.textContent = "Opening payment…"; } err.textContent = "";
   try {
-    const r = await fetch(HOST.api + "/pay/" + g + "/" + encodeURIComponent(HOST.site), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ back: location.origin + location.pathname, order_no: o.id, total: o.t.total, pin: o.c.pin, name: o.c.name, email: o.c.email, phone: o.c.phone, items: lines.map((l) => ({ id: l.p.id, qty: l.qty, opt: l.opt || "" })), points: o.t.pts || 0, otp: o.otp || "" }) });
+    const r = await fetch(HOST.api + "/pay/" + g + "/" + encodeURIComponent(HOST.site), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ back: location.origin + location.pathname, order_no: o.id, total: o.t.total, pin: o.c.pin, name: o.c.name, email: o.c.email, phone: o.c.phone, items: lines.map((l) => ({ id: l.p.id, qty: l.qty, opt: l.opt || "" })), points: o.t.pts || 0, otp: o.otp || "", acct: o.ac || "" }) });
     const j = await r.json().catch(() => null);
     if (!r.ok || !j || !(j.order_id || j.go || j.session)) return say((j && j.error) || "Online payment couldn't start. Please try again, or choose another way to pay.");
     if (g === "rz") {
