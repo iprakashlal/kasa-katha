@@ -22,7 +22,7 @@
     if (/^e?otp\/send/.test(path)) return ok({ ok: true, via: body.via });
     if (/^e?otp\/check/.test(path)) return ok({ ok: true, token: "demo" });
     if (path === "acct/in") return ok({ ok: true, kind: body.phone ? "phone" : "email", key: body.phone ? "91" + digits(body.phone).slice(-10) : String(body.email).toLowerCase(), pass: Date.now() + day + ".demo" });
-    if (path === "acct/save") { demoProfile = { name: body.name, phone: body.phone || "", email: body.email || "", addresses: body.addresses || [] }; return ok({ ok: true, profile: demoProfile }); }
+    if (path === "acct/save") { demoProfile = { name: body.name, phone: body.phone || "", email: body.email || "", addresses: body.addresses || [], dob: body.dob || "", gender: body.gender || "" }; return ok({ ok: true, profile: demoProfile }); }
     const P = demoProfile || { name: "Asha Rao", phone: "+91 98765 43210", email: "asha@example.com", addresses: [{ label: "Home", line1: "12 MG Road", line2: "Camp", city: "Pune", pin: "411001", state: "Maharashtra" }] }, m = cfg.money || ((n) => String(n));
     return ok({ ok: true, ...P, count: 2, points: 120, loyalty: { worth: 1, min: 50, maxPct: 50 }, orders: [
       { no: "SAMPLE-1002", at: new Date(Date.now() - 20 * 60000).toISOString(), total: m(640), status: "preparing", mode: cfg.kind === "store" ? "Shop order" : "Delivery", paid: true, pay: "Paid online", address: "12 MG Road, Pune", name: P.name, points: "Earned 32 points", items: it.map((x, i) => ({ n: x.n, q: i ? 1 : 2, i: x.i })), text: "" },
@@ -55,6 +55,7 @@
 .sa-link{justify-self:start;border:0;background:none;padding:0;color:inherit;font:inherit;font-size:13.5px;font-weight:600;text-decoration:underline;text-underline-offset:3px;cursor:pointer;opacity:.8}
 .sa-bad{color:#b3261e;font-size:13.5px;font-weight:600}html[data-dark=true] .sa-bad{color:#ff9e94}.sa-good{color:#1e7a46;font-size:13.5px;font-weight:600}html[data-dark=true] .sa-good{color:#7bd9a0}
 .sa-safe{display:flex;gap:8px;align-items:center}.sa-safe svg{width:15px;height:15px;flex:none;opacity:.7}
+.sa-sk{display:block;height:46px;border-radius:12px;background:linear-gradient(100deg,rgba(128,128,128,.12) 30%,rgba(128,128,128,.24) 50%,rgba(128,128,128,.12) 70%);background-size:300% 100%;animation:sa-sh 1.3s linear infinite}.sa-sk.t{height:26px;width:60%}.sa-sk.h{height:96px}@keyframes sa-sh{from{background-position:100% 0}to{background-position:0 0}}
 .sa-card{border:1px solid var(--line,#ddd);background:var(--surface,#fff);border-radius:calc(var(--sa-r) + 6px);padding:26px;max-width:460px;box-shadow:0 18px 50px -28px rgba(0,0,0,.35)}
 .sa-back{position:fixed;inset:0;z-index:2147483000;background:rgba(10,10,10,.5);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;justify-content:flex-end;animation:sa-fade .2s ease-out}
 .sa-back[data-panel=left]{justify-content:flex-start}.sa-back[data-panel=sheet]{justify-content:center;align-items:center;padding:16px}
@@ -160,16 +161,29 @@
   function orderHTML(o, live) {
     const open = live || ui.open === o.no, t = cfg.track && cfg.track(o);
     return `<div class="sa-o" data-order="${esc(o.no)}"><button type="button" data-sa="toggle" data-v="${esc(o.no)}" aria-expanded="${open}">${thumbs(o)}<b>${esc(o.no)}</b><span class="sa-amt">${esc(o.total)}</span><span class="sa-when">${esc(when(o.at))}${o.mode ? " · " + esc(o.mode) : ""}</span><span class="sa-chip" data-s="${esc(o.status === "cancelled" ? "cancelled" : (LIVE[o.status] || 0) >= 5 ? "done" : "")}">${esc(label(o))}${o.paid ? " · Paid" : ""}</span></button>
-      ${open ? `<div class="sa-more">${live ? track(o) : ""}${lines(o)}${o.points ? `<p class="sa-soft" style="font-weight:600">${esc(o.points)}</p>` : ""}<div class="sa-row"><button type="button" class="sa-btn" data-sa="bill" data-v="${esc(o.no)}">${IC.down}Download bill</button>${t ? `<a class="sa-btn" href="${esc(t)}">Open tracking page</a>` : ""}</div></div>` : ""}</div>`;
+      ${open ? `<div class="sa-more">${live ? track(o) : ""}${o.track ? `<p class="sa-soft" data-sa-ship>Shipped with <b>${esc(o.track.name)}</b>${o.track.awb ? `, tracking number <b style="font-family:ui-monospace,monospace">${esc(o.track.awb)}</b>` : ""}. <button type="button" class="sa-btn" data-sa="ship" data-v="${esc(o.no)}">Track parcel</button></p><div data-sa-shipout="${esc(o.no)}"></div>` : ""}${lines(o)}${o.points ? `<p class="sa-soft" style="font-weight:600">${esc(o.points)}</p>` : ""}<div class="sa-row"><button type="button" class="sa-btn" data-sa="bill" data-v="${esc(o.no)}">${IC.down}Download bill</button>${t ? `<a class="sa-btn" href="${esc(t)}">Open tracking page</a>` : ""}</div></div>` : ""}</div>`;
+  }
+  /* Where a shipped order's parcel is: each scan the shop's tracking service has, newest first (else the courier's own page). */
+  function shipDraw(o, el) {
+    const t = o.track, link = t && /^https:\/\//.test(t.link || "") ? t.link : "";
+    const fall = (why) => { el.innerHTML = `<p class="sa-soft">${esc(why)}${link ? ` <a href="${esc(link)}" target="_blank" rel="noopener">Track on ${esc(t.name)}'s site ↗</a>` : ""}</p>`; };
+    if (cfg.demo || !me) return fall("Live tracking shows on the published site.");
+    el.innerHTML = `<p class="sa-soft">Asking the courier…</p>`;
+    const dt = (v) => { const d = new Date(v); return !v ? "" : isNaN(+d) ? String(v) : d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }); };
+    real("track", { no: o.no, key: me.key, pass: me.pass }).then((r) => r.json().then((j) => ({ r, j }))).then(({ r, j }) => {
+      const L = r.ok && j && j.live; if (!L) return fall("The courier's own page has the latest.");
+      el.innerHTML = `<div class="sa-ship"><p><b>${esc(L.label || L.say)}</b>${L.eta ? ` <span class="sa-soft">· expected by ${esc(new Date(L.eta).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }))}</span>` : ""}</p>${(L.ev || []).length ? `<ol class="sa-track" aria-label="Parcel history">${L.ev.slice(0, 12).map((e, i) => `<li${i === 0 ? " data-on data-now" : ""}><span><b style="font-weight:600;color:inherit">${esc(e.text)}</b><br><span class="sa-soft" style="font-weight:400">${esc([e.place, dt(e.at)].filter(Boolean).join(" · "))}</span></span></li>`).join("")}</ol>` : ""}${link || L.link ? `<p><a href="${esc(L.link || link)}" target="_blank" rel="noopener">Track on ${esc(t.name)}'s site ↗</a></p>` : ""}</div>`;
+    }).catch(() => fall("We couldn't reach the courier just now."));
   }
   const blankAddr = () => ({ label: "", line1: "", line2: "", city: "", pin: "", state: "" });
   function profileHTML(d) {
     const byMail = me.kind === "email", A = ui.addrs || (ui.addrs = (d.addresses && d.addresses.length ? d.addresses : [blankAddr()]).map((a) => ({ ...blankAddr(), ...a }))), many = !!cfg.addresses;
-    const f = (id, lab, val, more) => `<div class="sa-f"><label for="${id}">${lab}</label><input id="${id}" value="${esc(val || "")}" ${more || ""}></div>`;
+    const ASK = cfg.ask || {}, f = (id, lab, val, more) => `<div class="sa-f"><label for="${id}">${lab}</label><input id="${id}" value="${esc(val || "")}" ${more || ""}></div>`;
     return `<form class="sa-form" data-sa-profile novalidate>
       ${f("sa-name", "Name", d.name, 'autocomplete="name" maxlength="100"')}
       <div class="sa-two">${f("sa-phone", "Mobile number", d.phone, byMail ? 'type="tel" inputmode="tel" autocomplete="tel"' : "readonly")}${f("sa-email", "Email address", d.email, byMail ? "readonly" : 'type="email" autocomplete="email"')}</div>
       <p class="sa-soft">You sign in with your ${byMail ? "email address" : "mobile number"}, so that one can't be changed here.</p>
+      ${ASK.dob || ASK.gender ? `<div class="sa-two">${ASK.dob ? f("sa-dob", "Date of birth", d.dob, `type="date" max="${new Date().toISOString().slice(0, 10)}" min="1900-01-01" autocomplete="bday"`) : ""}${ASK.gender ? `<div class="sa-f"><label for="sa-gender">Gender</label><select id="sa-gender"><option value="">Prefer not to say</option>${[["female", "Female"], ["male", "Male"], ["other", "Other"]].map(([k, l]) => `<option value="${k}"${d.gender === k ? " selected" : ""}>${l}</option>`).join("")}</select></div>` : ""}</div>` : ""}
       <p class="sa-sub">${many ? "Saved addresses" : "Your address"}</p>
       ${A.map((a, i) => `<div class="sa-addr" data-addr="${i}">${many ? `<div class="sa-row"><b>Address ${i + 1}</b>${A.length > 1 ? `<button type="button" class="sa-link" data-sa="deladdr" data-v="${i}">Remove</button>` : ""}</div>${f("sa-a-label-" + i, "Name for it (optional)", a.label, 'placeholder="Home, Office…" maxlength="30"')}` : ""}
         ${f("sa-a-line1-" + i, "Address", a.line1, 'autocomplete="address-line1"')}${f("sa-a-line2-" + i, "Area or landmark (optional)", a.line2, 'autocomplete="address-line2"')}
@@ -180,16 +194,17 @@
   }
   function acctHTML() {
     const d = data;
-    if (!d) return `<div class="sa"><p class="sa-soft">Loading your account…</p></div>`;
+    if (!d) return `<div class="sa" role="status" aria-label="Loading your account"><i class="sa-sk t"></i><i class="sa-sk h"></i><i class="sa-sk"></i><i class="sa-sk"></i></div>`;
     if (d.error) return `<div class="sa"><p class="sa-bad" role="alert">${esc(d.error)}</p></div>`;
-    const live = d.orders.filter(active), past = d.orders.filter((o) => !active(o)), view = ui.view || (live.length ? "now" : "orders");
+    let live = d.orders.filter(active), past = d.orders.filter((o) => !active(o)), view = ui.view || (live.length ? "now" : ["orders", "profile"].includes(U().startView) ? U().startView : "orders"), T = (k, d) => String(U()[k] || "").trim() || d;
     const L = d.loyalty, worth = L && L.worth > 0 ? Math.round(d.points * L.worth * 100) / 100 : 0, m = cfg.money || ((n) => String(n));
-    const tabs = [["now", "Current order" + (live.length > 1 ? "s" : "")], ["orders", "Order history"], ["profile", "Profile"]], nm = String(d.name || "").trim();
-    return `<div class="sa"><div class="sa-hero"><div class="sa-me"><span class="sa-av" aria-hidden="true">${esc((nm || show(me.key).replace(/^\+/, "")).slice(0, 1).toUpperCase())}</span><div><b>${nm ? "Hi, " + esc(nm.split(" ")[0]) : "Welcome"}</b><span>${esc(show(me.key))}</span></div><button type="button" class="sa-link" data-sa="out">Sign out</button></div>
-      <div class="sa-pills">${L ? `<span class="sa-pill"><b>${d.points}</b>point${d.points === 1 ? "" : "s"}${worth ? ` · worth up to ${esc(m(worth))}` : ""}</span>` : ""}<span class="sa-pill"><b>${d.count}</b>order${d.count === 1 ? "" : "s"}</span></div></div>
+    const tabs = [["now", T("tabNow", "Current order" + (live.length > 1 ? "s" : ""))], ["orders", T("tabOrders", "Order history")], ["profile", T("tabProfile", "Profile")]].filter((x) => !(x[0] === "now" && U().hideNow === true)), nm = String(d.name || "").trim();
+    if (U().hideNow === true && view === "now") view = "orders";
+    return `<div class="sa"><div class="sa-hero"><div class="sa-me"><span class="sa-av" aria-hidden="true">${esc((nm || show(me.key).replace(/^\+/, "")).slice(0, 1).toUpperCase())}</span><div><b>${nm ? esc(T("hello", "Hi, {name}").replace(/\{name\}/g, nm.split(" ")[0])) : esc(T("welcome", "Welcome"))}</b><span>${esc(show(me.key))}</span></div><button type="button" class="sa-link" data-sa="out">Sign out</button></div>
+      <div class="sa-pills"${U().hidePills === true ? " hidden" : ""}>${L ? `<span class="sa-pill"><b>${d.points}</b>point${d.points === 1 ? "" : "s"}${worth ? ` · worth up to ${esc(m(worth))}` : ""}</span>` : ""}<span class="sa-pill"><b>${d.count}</b>order${d.count === 1 ? "" : "s"}</span></div></div>
       <div class="sa-tabs" role="tablist" aria-label="My account">${tabs.map(([k, l]) => `<button type="button" role="tab" data-sa="view" data-v="${k}" aria-selected="${view === k}">${l}${k === "now" && live.length ? `<em>${live.length}</em>` : ""}</button>`).join("")}</div>
-      ${view === "now" ? (live.length ? `<div class="sa-orders">${live.map((o) => orderHTML(o, true)).join("")}</div><p class="sa-soft">This updates by itself while it is open.</p>` : `<div class="sa-empty">${IC.bag}<span>No order in progress.</span></div>`)
-        : view === "orders" ? (past.length || live.length ? `<div class="sa-orders">${[...live, ...past].map((o) => orderHTML(o, false)).join("")}</div>` : `<div class="sa-empty">${IC.bag}<span>No orders yet. They show here once you place one while signed in.</span></div>`)
+      ${view === "now" ? (live.length ? `<div class="sa-orders">${live.map((o) => orderHTML(o, true)).join("")}</div><p class="sa-soft">This updates by itself while it is open.</p>` : `<div class="sa-empty">${IC.bag}<span>${esc(T("emptyNow", "No order in progress."))}</span></div>`)
+        : view === "orders" ? (past.length || live.length ? `<div class="sa-orders">${[...live, ...past].map((o) => orderHTML(o, false)).join("")}</div>` : `<div class="sa-empty">${IC.bag}<span>${esc(T("emptyOrders", "No orders yet. They show here once you place one while signed in."))}</span></div>`)
         : profileHTML(d)}</div>`;
   }
   function draw() {
@@ -201,11 +216,32 @@
   /** What is typed in the profile form, read back into the working copy (so a redraw keeps it). */
   function readProfile() {
     const v = (id) => String((document.getElementById(id) || {}).value || "").trim(); if (!document.getElementById("sa-name") || !data || data.error) return;
-    data.name = v("sa-name"); if (me.kind === "email") data.phone = v("sa-phone"); else data.email = v("sa-email");
+    data.name = v("sa-name"); if (document.getElementById("sa-dob")) data.dob = v("sa-dob"); if (document.getElementById("sa-gender")) data.gender = v("sa-gender"); if (me.kind === "email") data.phone = v("sa-phone"); else data.email = v("sa-email");
     (ui.addrs || []).forEach((a, i) => { for (const k of ["label", "line1", "line2", "city", "pin", "state"]) if (document.getElementById("sa-a-" + k + "-" + i)) a[k] = v("sa-a-" + k + "-" + i); });
   }
+  /** Ready-made invoice styles: a layout, a colour and a font in one choice (the owner's own choices still win). */
+  var INV_THEMES = { corporate: { layout: "modern", accent: "#1D4ED8" }, ink: { layout: "classic", accent: "#14171C" }, sunset: { layout: "bold", accent: "#E4572E" }, emerald: { layout: "minimal", accent: "#0F766E" }, royal: { layout: "modern", accent: "#6D28D9", font: "serif" }, receipt: { layout: "ledger", accent: "#14171C", font: "mono" }, boutique: { layout: "minimal", accent: "#9D174D", font: "serif" } };
+  var INV_LAYOUTS = ["classic", "modern", "minimal", "bold", "ledger"];
+  function invCss(I) {
+    I = I || {}; var P = INV_THEMES[I.theme] || {}, fo = I.font || P.font || "";
+    var lay = INV_LAYOUTS.indexOf(I.layout) >= 0 ? I.layout : INV_LAYOUTS.indexOf(P.layout) >= 0 ? P.layout : "classic", ac = /^#[0-9a-f]{6}$/i.test(I.accent || "") ? I.accent : P.accent || "#14171c";
+    var ff = fo === "serif" ? "Georgia,'Times New Roman',serif" : fo === "mono" ? "ui-monospace,'SF Mono',Menlo,Consolas,monospace" : "";
+    var tint = "color-mix(in srgb," + ac + " 12%,#fff)";
+    var css = ":root{--ac:" + ac + "}" + (ff ? "body,.sheet,button{font-family:" + ff + "!important}" : "");
+    if (lay === "modern") css += ".top{background:var(--ac)!important;color:#fff;border:0!important;border-radius:12px;padding:22px 26px!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.top *{color:#fff!important}.top h1{font-size:26px}th{background:" + tint + "!important;color:var(--ac)!important;border:0!important}td{border-bottom:1px solid #eef0f3!important}.tot .g{color:var(--ac);border-top:2px solid var(--ac)!important}.words{background:" + tint + "!important}h2{color:var(--ac)!important}.sheet{border-radius:14px}";
+    else if (lay === "minimal") css += ".sheet{padding:52px 56px!important}h1{font-weight:300!important;letter-spacing:.28em!important;text-transform:uppercase;font-size:20px!important}.top{border-bottom:1px solid #cfd3d9!important}th{background:none!important;border-bottom:1px solid #14171c!important;color:#14171c!important;font-weight:600}td{border-bottom:1px solid #f0f1f3!important}.words{background:none!important;padding:10px 0!important;border-top:1px solid #e5e7eb;border-radius:0}.tot .g{border-top:1px solid #14171c!important}h2{color:var(--ac)!important;font-weight:600}";
+    else if (lay === "bold") css += "h1{font-size:36px!important;font-weight:900!important;text-transform:uppercase;color:var(--ac);line-height:1}.top{border-bottom:8px solid var(--ac)!important;padding-bottom:20px!important}th{background:#14171c!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tot .g{background:var(--ac);color:#fff;padding:10px 12px!important;border:0!important;border-radius:6px;-webkit-print-color-adjust:exact;print-color-adjust:exact}h2{color:var(--ac)!important}.words{border-left:5px solid var(--ac);border-radius:0!important}";
+    else if (lay === "ledger") css += "body{font-size:12.5px!important}.sheet{padding:26px 28px!important}.top{border:1px solid #14171c!important;padding:14px!important}table,th,td{border:1px solid #14171c!important}th,td{padding:5px 7px!important}th{background:" + tint + "!important;color:#14171c!important}.tot{border:1px solid #14171c;padding:6px 10px}.tot .g{border-top:1px solid #14171c!important}.words{border:1px solid #14171c;background:none!important;border-radius:0!important}";
+    else if (ac !== "#14171c") css += ".top{border-bottom-color:var(--ac)!important}.tot .g{border-top-color:var(--ac)!important}h2{color:var(--ac)!important}th{color:var(--ac)!important}";
+    if (I.words === false) css += ".words{display:none!important}";
+    if (I.summary === false) css += ".taxsum{display:none!important}";
+    if (I.sign === false) css += ".sign{display:none!important}";
+    return css;
+  }
+
   /** A bill for one order: a page of its own that prints (or saves as a PDF) cleanly. */
   function bill(o) {
+    if (cfg.gstBill && cfg.gstBill(o)) return; // a GST invoice, when the site offers one
     const B = cfg.biz || {}, rows = (o.items || []).length ? `<table><thead><tr><th>Item</th><th class="r">Qty</th></tr></thead><tbody>${o.items.map((x) => `<tr><td>${esc(x.n)}</td><td class="r">${x.q}</td></tr>`).join("")}</tbody></table>` : "";
     const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bill ${esc(o.no)}</title><style>
 body{font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#111;margin:0;padding:32px;max-width:760px;margin-inline:auto}h1{font-size:22px;margin:0}h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#666;margin:22px 0 6px}
@@ -213,11 +249,11 @@ body{font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;co
 table{width:100%;border-collapse:collapse;margin-top:6px}th,td{padding:8px 0;border-bottom:1px solid #ddd;text-align:left;font-size:14px}th{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:#666}
 pre{white-space:pre-wrap;font:inherit;font-size:14px;margin:6px 0 0}.tot{display:flex;justify-content:space-between;font-size:18px;font-weight:700;border-top:2px solid #111;margin-top:18px;padding-top:12px}
 .note{color:#666;font-size:12.5px;margin-top:26px}button{font:inherit;font-weight:700;padding:10px 18px;border-radius:999px;border:1px solid #111;background:#111;color:#fff;cursor:pointer;margin-top:22px}@media print{button{display:none}body{padding:0}}
-</style></head><body><div class="top"><div><h1>${esc(B.name || "")}</h1>${B.address ? `<p>${esc(B.address)}</p>` : ""}${B.phone ? `<p>${esc(B.phone)}</p>` : ""}${B.email ? `<p>${esc(B.email)}</p>` : ""}${B.gstin ? `<p>GSTIN: ${esc(B.gstin)}</p>` : ""}</div><div class="r"><p><b>Bill</b></p><p>${esc(o.no)}</p><p>${esc(when(o.at))}</p><p>${esc(label(o))}${o.paid ? " · Paid" : ""}</p></div></div>
+${invCss(B.inv)}</style></head><body><div class="top"><div>${B.inv && B.inv.logo === true && B.logo ? `<img src="${esc((() => { try { return new URL(String(B.logo), location.href).href; } catch (e) { return ""; } })())}" alt="" style="height:44px;max-width:180px;object-fit:contain;display:block;margin:0 0 8px">` : ""}<h1>${esc(B.name || "")}</h1>${B.address ? `<p>${esc(B.address)}</p>` : ""}${B.phone ? `<p>${esc(B.phone)}</p>` : ""}${B.email ? `<p>${esc(B.email)}</p>` : ""}${B.gstin ? `<p>GSTIN: ${esc(B.gstin)}</p>` : ""}</div><div class="r"><p><b>Bill</b></p><p>${esc(o.no)}</p><p>${esc(when(o.at))}</p><p>${esc(label(o))}${o.paid ? " · Paid" : ""}</p></div></div>
 <h2>Billed to</h2><p>${esc(o.name || (data && data.name) || "")}<br>${esc(show(me.key))}${o.address ? "<br>" + esc(o.address) : ""}</p>
 <h2>Order${o.mode ? " · " + esc(o.mode) : ""}</h2>${rows}${o.text ? `<pre>${esc(o.text)}</pre>` : ""}
 <div class="tot"><span>Total${o.pay ? ` <span style="font-weight:400;font-size:13.5px;color:#666">· ${esc(o.pay)}</span>` : ""}</span><span>${esc(o.total)}</span></div>
-<p class="note">This bill is made from your order as it was placed${B.gstin ? "" : ". It is not a tax invoice"}.</p><button onclick="print()">Print or save as PDF</button></body></html>`;
+${B.inv && B.inv.terms ? `<h2>Terms</h2><p class="note" style="margin-top:4px">${esc(B.inv.terms).replace(/\n/g, "<br>")}</p>` : ""}${B.inv && B.inv.thanks ? `<p style="text-align:center;font-weight:700;margin-top:22px">${esc(B.inv.thanks)}</p>` : ""}<p class="note">${B.inv && String(B.inv.footer || "").trim() ? esc(B.inv.footer) : `This bill is made from your order as it was placed${B.gstin ? "" : ". It is not a tax invoice"}.`}</p><button onclick="print()">Print or save as PDF</button></body></html>`;
     const blob = new Blob([html], { type: "text/html" }), url = URL.createObjectURL(blob), a = document.createElement("a");
     a.href = url; a.download = "Bill-" + String(o.no).replace(/[^\w-]+/g, "") + ".html"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
   }
@@ -227,11 +263,12 @@ pre{white-space:pre-wrap;font:inherit;font-size:14px;margin:6px 0 0}.tot{display
     if (a === "toggle") { ui.open = ui.open === v ? "" : v; return draw(); }
     if (a === "view") { readProfile(); ui.view = v; ui.msg = ""; ui.saved = ""; return draw(); }
     if (a === "bill") { const o = data && data.orders.find((x) => x.no === v); if (o) bill(o); return; }
+    if (a === "ship") { const o = data && data.orders.find((x) => x.no === v), el = modal && [].find.call(modal.querySelectorAll("[data-sa-shipout]"), (n) => n.getAttribute("data-sa-shipout") === v); if (o && el) shipDraw(o, el); return; }
     if (a === "addaddr") { readProfile(); ui.addrs.push(blankAddr()); return draw(); }
     if (a === "deladdr") { readProfile(); ui.addrs.splice(+v, 1); return draw(); }
     if (a === "save") {
       readProfile(); ui.msg = ""; ui.saved = ""; ui.busy = true; draw();
-      try { const r = await post("acct/save", { key: me.key, pass: me.pass, name: data.name, phone: data.phone, email: data.email, addresses: ui.addrs }), j = await r.json().catch(() => null);
+      try { const r = await post("acct/save", { key: me.key, pass: me.pass, name: data.name, phone: data.phone, email: data.email, addresses: ui.addrs, ...((cfg.ask || {}).dob ? { dob: data.dob || "" } : {}), ...((cfg.ask || {}).gender ? { gender: data.gender || "" } : {}) }), j = await r.json().catch(() => null);
         if (r.status === 401) { ui.busy = false; out(); return; }
         if (!r.ok || !j || !j.profile) ui.msg = (j && j.error) || "Couldn't save that. Please try again.";
         else { Object.assign(data, j.profile); ui.addrs = null; ui.saved = "Saved."; keepProfile(); changed(); }
@@ -268,7 +305,7 @@ pre{white-space:pre-wrap;font:inherit;font-size:14px;margin:6px 0 0}.tot{display
 
   /* The profile is kept on the device too, so a checkout can fill itself in before the account has loaded. */
   let prof = null;
-  function keepProfile() { prof = data && !data.error ? { name: data.name || "", phone: data.phone || "", email: data.email || "", addresses: data.addresses || [] } : prof; try { if (prof && !cfg.demo) localStorage.setItem(key() + ":p", JSON.stringify(prof)); } catch (e) { /* private window */ } }
+  function keepProfile() { prof = data && !data.error ? { name: data.name || "", phone: data.phone || "", email: data.email || "", addresses: data.addresses || [], dob: data.dob || "", gender: data.gender || "" } : prof; try { if (prof && !cfg.demo) localStorage.setItem(key() + ":p", JSON.stringify(prof)); } catch (e) { /* private window */ } }
   async function load(quiet) {
     if (!me) return;
     try { const r = await post("acct/me", { key: me.key, pass: me.pass }), j = await r.json().catch(() => null);
@@ -295,7 +332,7 @@ pre{white-space:pre-wrap;font:inherit;font-size:14px;margin:6px 0 0}.tot{display
     /** { api, site, kind ("restaurant" | "store"), acct (from the database's "what can this site do"), addresses (several can be kept),
      *    money(n), img(path), track(order), biz { name, address, phone, email, gstin }, onChange(user) } */
     init(o) { cfg = o; can = o.acct || null; me = null; prof = null;
-      if (o.demo) { me = demoMe; if (modal) { modal.setAttribute("data-panel", pickOf(U().panel, ["right", "left", "sheet", "full"])); const d = modal.querySelector(".sa-drawer"); for (const [k, v] of Object.entries({ tone: ["accent", "ink", "soft"], head: ["banner", "plain"], cards: ["shadow", "outline", "filled"], corners: ["theme", "soft", "round", "sharp"], tabs: ["underline", "pills", "blocks"] })) d.setAttribute("data-" + k, pickOf(U()[k], v)); draw(); } return; }
+      if (o.demo) { me = demoMe || (o.signedIn ? (demoMe = { key: "919876543210", kind: "phone", pass: Date.now() + 864e5 + ".demo", typed: "+91 98765 43210" }) : null); if (modal) { modal.setAttribute("data-panel", pickOf(U().panel, ["right", "left", "sheet", "full"])); const d = modal.querySelector(".sa-drawer"); for (const [k, v] of Object.entries({ tone: ["accent", "ink", "soft"], head: ["banner", "plain"], cards: ["shadow", "outline", "filled"], corners: ["theme", "soft", "round", "sharp"], tabs: ["underline", "pills", "blocks"] })) d.setAttribute("data-" + k, pickOf(U()[k], v)); draw(); } return; }
       try { me = JSON.parse(localStorage.getItem(key()) || "null"); } catch (e) { me = null; }
       if (me && !(+String(me.pass).split(".")[0] > Date.now() && me.key)) me = null;
       if (me && can && !kinds().includes(me.kind)) me = null;

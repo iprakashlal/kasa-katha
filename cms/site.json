@@ -1,13 +1,13 @@
 {
   "template": "store",
   "name": "Kasa Katha",
-  "version": 17,
+  "version": 28,
   "admin": "admin.html",
-  "exportedAt": "2026-11-21T06:23:39.028Z",
+  "exportedAt": "2026-11-22T21:29:18.105Z",
   "generator": "Site Studio",
   "studioBuild": {
-    "id": "7e1d41d",
-    "at": "2026-11-21T05:55:34.211Z"
+    "id": "ec25869",
+    "at": "2026-11-22T21:22:21.372Z"
   },
   "badge": "1i8r1v1",
   "menu": {
@@ -23,6 +23,9 @@
         "label": "Menu & sections"
       },
       {
+        "id": "menu"
+      },
+      {
         "id": "home"
       },
       {
@@ -30,6 +33,12 @@
       },
       {
         "id": "categories"
+      },
+      {
+        "id": "video"
+      },
+      {
+        "id": "social"
       },
       {
         "id": "shop"
@@ -41,13 +50,19 @@
         "id": "pricing"
       },
       {
+        "id": "delivery"
+      },
+      {
+        "id": "gst"
+      },
+      {
         "id": "checkout"
       },
       {
-        "id": "payments"
+        "id": "users"
       },
       {
-        "id": "backend"
+        "id": "payments"
       },
       {
         "id": "orders"
@@ -56,16 +71,40 @@
         "id": "contact"
       },
       {
+        "id": "static-pages"
+      },
+      {
+        "id": "warranty"
+      },
+      {
+        "id": "emails"
+      },
+      {
+        "id": "features"
+      },
+      {
+        "id": "festival"
+      },
+      {
+        "id": "languages"
+      },
+      {
         "id": "seo"
+      },
+      {
+        "id": "consent"
+      },
+      {
+        "id": "legal"
       },
       {
         "id": "cms"
       },
       {
-        "id": "shop-orders"
+        "id": "code"
       },
       {
-        "id": "shop-customers"
+        "id": "warranty-records"
       },
       {
         "id": "backup"
@@ -73,8 +112,7 @@
       {
         "id": "account"
       }
-    ],
-    "studio": true
+    ]
   },
-  "menuV": "12bwu9n"
+  "menuV": "1mi8u0y"
 }
