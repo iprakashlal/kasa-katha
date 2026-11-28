@@ -3,11 +3,11 @@
   "name": "Kasa Katha",
   "version": 31,
   "admin": "admin.html",
-  "exportedAt": "2026-11-27T23:11:58.478Z",
+  "exportedAt": "2026-11-28T00:15:12.070Z",
   "generator": "Site Studio",
   "studioBuild": {
-    "id": "9ec4b03",
-    "at": "2026-11-27T23:01:29.262Z"
+    "id": "2a78dcc",
+    "at": "2026-11-27T23:55:18.244Z"
   },
   "badge": "1qt9bdp",
   "menu": {
@@ -114,5 +114,6 @@
       }
     ]
   },
-  "menuV": "1mi8u0y"
+  "menuV": "1mi8u0y",
+  "pdV": "n9rqbo"
 }
